@@ -60,6 +60,7 @@ class WaveformVisualizer:
 
         # Scroll Zoom setup
         self.fig.canvas.mpl_connect('scroll_event', self.on_scroll)
+        self.fig.canvas.mpl_connect('key_press_event', self.on_key)
 
         # Enable "Zoom to Rectangle" by default
         try:
@@ -184,6 +185,37 @@ class WaveformVisualizer:
 
         # Then update slider
         self.slider.set_val(new_start)
+
+    def on_key(self, event):
+        """Handle keyboard shortcuts."""
+        if event.key == 'right':
+            xlim = self.ax.get_xlim()
+            width = xlim[1] - xlim[0]
+            new_start = xlim[0] + (width * 0.5)
+            # Clamp
+            new_start = max(0, min(new_start, self.duration_sec - width))
+            self.slider.set_val(new_start)
+        elif event.key == 'left':
+            xlim = self.ax.get_xlim()
+            width = xlim[1] - xlim[0]
+            new_start = xlim[0] - (width * 0.5)
+            # Clamp
+            new_start = max(0, min(new_start, self.duration_sec - width))
+            self.slider.set_val(new_start)
+        elif event.key == ' ':
+            # Zoom out to max, preserving center
+            xlim = self.ax.get_xlim()
+            center = (xlim[0] + xlim[1]) / 2
+
+            new_width = MAX_WIDTH_SEC
+            new_start = center - (new_width / 2)
+
+            # Clamp bounds
+            new_start = max(0, min(new_start, self.duration_sec - new_width))
+
+            # Set limits first
+            self.ax.set_xlim(new_start, new_start + new_width)
+            self.slider.set_val(new_start)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Linux Audio Waveform Visualizer 2026 (mmap)")
