@@ -5,3 +5,4 @@ convert
 gensin
 gensin.h
 __pycache__/
+.venv/
