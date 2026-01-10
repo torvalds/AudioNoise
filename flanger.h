@@ -1,5 +1,5 @@
-// Flanger effect based on the MIT-licensed DaisySP library by Electrosmith
-// which in turn seems to be based on Soundpipe by Paul Batchelor
+// Flanger effect based on the MIT-licensed DaisySP library by Electrosmith,
+// which, in turn, seems to be based on Soundpipe by Paul Batchelor
 
 static inline void flanger_init(float pot1, float pot2, float pot3, float pot4)
 {
