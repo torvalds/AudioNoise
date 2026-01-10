@@ -44,7 +44,7 @@ void discont_init(float pot1, float pot2, float pot3, float pot4)
 float discont_step(float in)
 {
 	// The 'idx << 1' is because we only use half the wave,
-	// we'll use 'sin**2' that is the same in both halves
+	// We'll use 'sin**2' that is the same in both halves
 	uint i = (disco.lfo.idx << 1) >> (32 - DISCONT_SHIFT);
 	int ni = (i + DISCONT_STEPS/2) & (DISCONT_STEPS-1);
 	float sin = lfo_step(&disco.lfo, lfo_sinewave);
