@@ -12,6 +12,7 @@ static float effect_delay, target_effect_delay;
 static float effect_depth;
 static struct lfo_state effect_lfo;
 
+//Defines for feedback and settings
 #define effect_set_lfo(f)	set_lfo_freq(&effect_lfo, f)
 #define effect_set_lfo_ms(ms)	set_lfo_ms(&effect_lfo, ms)
 #define effect_set_depth(d)	effect_depth = (d)
