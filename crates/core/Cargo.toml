@@ -10,12 +10,17 @@ crate-type = ["rlib", "cdylib"]
 
 [features]
 default = []
-python = ["pyo3"]
+python = ["pyo3", "numpy"]
 
 [dependencies]
+# Raw audio IO
+memmap2 = "0.9"
+bytemuck = "1.24"
+
 # "extension-module" tells pyo3 we want to build an extension module (skips linking against libpython.so)
 # "abi3-py310" tells pyo3 (and maturin) to build using the stable ABI with minimum Python version 3.10
 pyo3 = { version = "0.27", features = [
     "extension-module",
     "abi3-py310",
 ], optional = true }
+numpy = { version = "0.27", optional = true }
