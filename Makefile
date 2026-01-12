@@ -2,14 +2,15 @@ CC = gcc
 CFLAGS = -Wall -O2 -ffast-math -fsingle-precision-constant # -Wdouble-promotion -Wfloat-conversion
 LDFLAGS = -lm
 
-effects = flanger echo fm phaser discont
+effects = flanger echo fm phaser discont distortion
 flanger_defaults = 0.6 0.6 0.6 0.6
 echo_defaults = 0.3 0.3 0.3 0.3
 fm_defaults = 0.25 0.25 0.5 0.5
 phaser_defaults = 0.3 0.3 0.5 0.5
 discont_defaults = 0.8 0.1 0.2 0.2
+distortion_defaults = 0.5 0.6 0.8 0.0
 
-HEADERS = biquad.h  discont.h  echo.h  effect.h  flanger.h  fm.h  gensin.h lfo.h  phaser.h  util.h
+HEADERS = biquad.h  discont.h  distortion.h  echo.h  effect.h  flanger.h  fm.h  gensin.h lfo.h  phaser.h  util.h
 
 default:
 	@echo "Pick one of" $(effects)
