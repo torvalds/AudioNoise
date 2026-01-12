@@ -4,7 +4,18 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backend_bases import MouseButton
+from matplotlib.collections import LineCollection
 from matplotlib.widgets import RectangleSelector, Slider
+
+# Optional Rust helpers (if the Python bindings are installed).
+try:
+    from audionoise import autoscale_symmetric as core_autoscale
+except Exception:
+    core_autoscale = None
+try:
+    from audionoise import bucket_min_max_i32_np as core_bucket_min_max
+except Exception:
+    core_bucket_min_max = None
 
 # --- Constants ---
 INITIAL_WINDOW_SEC = 2.0
@@ -22,6 +33,7 @@ class WaveformVisualizer:
 
         self.mapped_files = []
         self.lines = []
+        self.collections = []
         self.max_samples = 0
 
         # Load files
@@ -50,6 +62,10 @@ class WaveformVisualizer:
         for _, name in self.mapped_files:
             (line,) = self.ax.plot([], [], linewidth=0.8, label=name)
             self.lines.append(line)
+            collection = LineCollection([], linewidths=0.8, colors=[line.get_color()])
+            collection.set_visible(False)
+            self.ax.add_collection(collection)
+            self.collections.append(collection)
 
         self.ax.grid(True, which="both", linestyle=":", alpha=0.5)
         self.ax.set_xlabel("Time (s)")
@@ -93,39 +109,74 @@ class WaveformVisualizer:
         global_min_y, global_max_y = 1e9, -1e9
         has_data = False
 
-        for line, (mm, _) in zip(self.lines, self.mapped_files, strict=False):
+        bucket_count = max(1, int(self.ax.bbox.width))
+
+        for line, collection, (mm, _) in zip(self.lines, self.collections, self.mapped_files, strict=False):
             if start_sample >= mm.size:
                 line.set_data([], [])
+                collection.set_segments([])
+                collection.set_visible(False)
                 continue
 
             safe_end = min(end_sample, mm.size)
             if safe_end <= start_sample:
                 line.set_data([], [])
+                collection.set_segments([])
+                collection.set_visible(False)
                 continue
 
             chunk = mm[start_sample:safe_end]
 
             if chunk.size > 0:
-                normalized = chunk.astype(np.float32) / 2147483648.0
+                if core_bucket_min_max is not None and bucket_count > 1 and chunk.size > bucket_count * 4:
+                    buckets = core_bucket_min_max(mm, start_sample, safe_end, bucket_count)
+                    duration = (safe_end - start_sample) / self.rate
+                    if bucket_count:
+                        bucket_span = duration / bucket_count
+                    else:
+                        bucket_span = 0.0
 
-                # Precise time axis using arange
-                t_origin = start_sample / self.rate
-                t_axis = np.arange(chunk.size) / self.rate + t_origin
+                    segments = []
+                    for idx, (min_y, max_y, has_values) in enumerate(buckets):
+                        if not has_values:
+                            continue
+                        x = start_time + (idx + 0.5) * bucket_span
+                        segments.append(((x, min_y), (x, max_y)))
+                        global_min_y = min(global_min_y, min_y)
+                        global_max_y = max(global_max_y, max_y)
+                        has_data = True
 
-                line.set_data(t_axis, normalized)
-
-                # Show markers if zoomed in enough (few samples visible)
-                if chunk.size < 300:
-                    line.set_marker(".")
-                    line.set_markersize(3)
-                else:
+                    collection.set_segments(segments)
+                    collection.set_visible(bool(segments))
+                    line.set_data([], [])
+                    line.set_visible(False)
                     line.set_marker("")
+                else:
+                    normalized = chunk.astype(np.float32) / 2147483648.0
 
-                global_min_y = min(global_min_y, np.min(normalized))
-                global_max_y = max(global_max_y, np.max(normalized))
-                has_data = True
+                    # Precise time axis using arange
+                    t_origin = start_sample / self.rate
+                    t_axis = np.arange(chunk.size) / self.rate + t_origin
+
+                    line.set_data(t_axis, normalized)
+                    line.set_visible(True)
+                    collection.set_segments([])
+                    collection.set_visible(False)
+
+                    # Show markers if zoomed in enough (few samples visible)
+                    if chunk.size < 300:
+                        line.set_marker(".")
+                        line.set_markersize(3)
+                    else:
+                        line.set_marker("")
+
+                    global_min_y = min(global_min_y, np.min(normalized))
+                    global_max_y = max(global_max_y, np.max(normalized))
+                    has_data = True
             else:
                 line.set_data([], [])
+                collection.set_segments([])
+                collection.set_visible(False)
 
         return has_data, global_min_y, global_max_y
 
@@ -148,15 +199,19 @@ class WaveformVisualizer:
 
             # Tight Y-axis scaling logic
             if has_data and max_y > min_y:
-                # Symmetric zoom centered at 0
-                max_val = max(abs(min_y), abs(max_y))
-
-                if max_val < 1e-6:
-                    max_val = 0.01
+                if core_autoscale is not None:
+                    y_min, y_max = core_autoscale(min_y, max_y)
+                    self.ax.set_ylim(y_min, y_max)
                 else:
-                    max_val *= 1.05
+                    # Symmetric zoom centered at 0
+                    max_val = max(abs(min_y), abs(max_y))
 
-                self.ax.set_ylim(-max_val, max_val)
+                    if max_val < 1e-6:
+                        max_val = 0.01
+                    else:
+                        max_val *= 1.05
+
+                    self.ax.set_ylim(-max_val, max_val)
             else:
                 # Default fallback if no data
                 self.ax.set_ylim(-1.0, 1.0)

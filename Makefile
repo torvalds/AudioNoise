@@ -18,7 +18,7 @@ play: output.raw
 	aplay -c1 -r 48000 -f s32 output.raw
 
 visualize: input.raw output.raw magnitude.raw outmagnitude.raw
-	python3 visualize.py input.raw output.raw magnitude.raw outmagnitude.raw
+	PYTHONPATH=python python3 -m audionoise.visualize input.raw output.raw magnitude.raw outmagnitude.raw
 
 %.raw: %.mp3
 	ffmpeg -y -v fatal -i $< -f s32le -ar 48000 -ac 1 $@
