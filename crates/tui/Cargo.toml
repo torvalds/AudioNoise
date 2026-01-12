@@ -1,0 +1,9 @@
+[package]
+name = "audionoise-tui"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+audionoise = { path = "../core" }
+ratatui = "0.30"
+crossterm = "0.29"
