@@ -45,37 +45,71 @@ struct effect {
 
 #define UPDATE(x) x += 0.001 * (target_##x - x)
 
+#define MAX_CHAIN 8
+
+static struct effect *find_effect(const char *name)
+{
+	for (int i = 0; i < ARRAY_SIZE(effects); i++) {
+		if (!strcmp(name, effects[i].name))
+			return &effects[i];
+	}
+	return NULL;
+}
+
 int main(int argc, char **argv)
 {
 	float pot[4];
-	struct effect *eff = &effects[0];
+	struct effect *chain[MAX_CHAIN];
+	int chain_len = 0;
 	s32 sample;
 
 	if (argc < 6)
 		return 1;
 
-	const char *name = argv[1];
+	// Parse effect chain: "effect1+effect2+effect3" or just "effect1"
+	char *chain_str = strdup(argv[1]);
+	char *token = strtok(chain_str, "+");
 
-	for (int i = 0; i < ARRAY_SIZE(effects); i++) {
-		if (!strcmp(name, effects[i].name))
-			eff = effects+i;
+	while (token && chain_len < MAX_CHAIN) {
+		struct effect *eff = find_effect(token);
+		if (eff) {
+			chain[chain_len++] = eff;
+		} else {
+			fprintf(stderr, "Unknown effect: %s\n", token);
+		}
+		token = strtok(NULL, "+");
+	}
+	free(chain_str);
+
+	if (chain_len == 0) {
+		fprintf(stderr, "No valid effects specified\n");
+		return 1;
 	}
 
 	for (int i = 0; i < 4; i++)
 		pot[i] = atof(argv[2+i]);
 
-	fprintf(stderr, "Playing %s(%f,%f,%f,%f)\n",
-		eff->name, pot[0], pot[1], pot[2], pot[3]);
+	// Initialize all effects in chain with same pots
+	// (In future, could support per-effect pots)
+	fprintf(stderr, "Chain: ");
+	for (int i = 0; i < chain_len; i++) {
+		if (i > 0) fprintf(stderr, " -> ");
+		fprintf(stderr, "%s", chain[i]->name);
+		chain[i]->init(pot[0], pot[1], pot[2], pot[3]);
+	}
+	fprintf(stderr, "\n");
+	fprintf(stderr, "Pots: %f, %f, %f, %f\n", pot[0], pot[1], pot[2], pot[3]);
 
-	eff->init(pot[0], pot[1], pot[2], pot[3]);
 	while (fread(&sample, 4, 1, stdin) == 1) {
 		UPDATE(effect_delay);
 
-		float in = process_input(sample);
+		float val = process_input(sample);
 
-		float out = eff->step(in);
+		// Run through effect chain
+		for (int i = 0; i < chain_len; i++)
+			val = chain[i]->step(val);
 
-		sample = process_output(out);
+		sample = process_output(val);
 		if (fwrite(&sample, 4, 1, stdout) != 1)
 			return 1;
 	}
