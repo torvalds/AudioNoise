@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS = -Wall -O2 -ffast-math -fsingle-precision-constant # -Wdouble-promotion -Wfloat-conversion
-LDFLAGS = -lm
+LDLIB = -lm
 
 effects = flanger echo fm phaser discont
 flanger_defaults = 0.6 0.6 0.6 0.6
