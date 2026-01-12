@@ -5,3 +5,10 @@ convert
 gensin
 gensin.h
 __pycache__/
+target/
+.venv/
+python/audionoise/_core*.so
+python/audionoise/_core*.pyd
+python/audionoise/_core*.dll
+python/audionoise/_core*.dylib
+python/audionoise/_core.pyi
