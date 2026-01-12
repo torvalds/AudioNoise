@@ -19,3 +19,7 @@ py-modules = ["visualize"]
 [tool.setuptools.packages.find]
 where = ["."]
 include = []
+
+[build-system]
+requires = ["setuptools>=61.0", "cffi>=1.15.0"]
+build-backend = "setuptools.build_meta"
