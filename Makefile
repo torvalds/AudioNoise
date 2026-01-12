@@ -51,5 +51,6 @@ gensin.h: gensin
 	./gensin > gensin.h
 
 gensin: gensin.c
+	gcc -Wall gensin.c -o gensin -lm
 
 .PHONY: default play $(effects) SeymourDuncan visualize
