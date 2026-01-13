@@ -1,0 +1,31 @@
+[project]
+name = "audionoise"
+version = "0.1.0"
+description = "Guitar Pedal tools + visualisation"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "matplotlib>=3.10.8",
+    "numpy>=2.2.6",
+]
+
+[tool.maturin]
+module-name = "audionoise._core"
+manifest-path = "crates/core/Cargo.toml"
+python-packages = ["audionoise"]
+python-source = "python"
+features = ["python"]
+
+[tool.uv]
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "crates/**/Cargo.toml" },
+    { file = "crates/**/src/**/*.rs" },
+    { file = "python/**/*.py" },
+    { file = "Cargo.toml" },
+    { file = "Cargo.lock" },
+]
+
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
