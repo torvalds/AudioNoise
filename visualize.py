@@ -1,7 +1,6 @@
 import os
 import tkinter as tk
 import argparse
-from typing import Any
 import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.axes import Axes
@@ -25,7 +24,7 @@ class WaveformVisualizer:
         self.min_width_sec = min_zoom_samples / rate
         self.max_visible = max_visible
 
-        self.mapped_files: list[tuple[np.memmap[Any, np.dtype[np.int32]], str]] = []
+        self.mapped_files: list[tuple[np.memmap, str]] = []
         self.lines: list[Line2D] = []
         self.max_samples = 0
         self.root = tk.Tk()
@@ -33,7 +32,7 @@ class WaveformVisualizer:
         self.fig: Figure
         self.ax: Axes
         self.slider: Slider
-        self.canvas : FigureCanvasBase
+        self.canvas: FigureCanvasBase
         self.duration_sec: float
 
         # Load files
@@ -53,7 +52,7 @@ class WaveformVisualizer:
         self.duration_sec = self.max_samples / self.rate
         self.setup_ui()
 
-    def setup_ui(self):
+    def setup_ui(self) -> None:
         self.fig = Figure(figsize=(12, 6))
         self.ax = self.fig.add_subplot()
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.root)
@@ -72,11 +71,9 @@ class WaveformVisualizer:
         self.ax.set_xlabel("Time (s)")
         self.ax.set_ylabel("Amplitude")
         self.ax.legend(loc='upper right', fontsize='x-small')
-        self.ax.xaxis.set_major_formatter(
-        mticker.FormatStrFormatter('%.3f')
-        )
+        self.ax.xaxis.set_major_formatter(mticker.FormatStrFormatter('%.3f'))
         # Slider setup
-        slider_ax : Axes = self.fig.add_axes([0.15, 0.05, 0.7, 0.03])
+        slider_ax: Axes = self.fig.add_axes([0.15, 0.05, 0.7, 0.03])
         self.slider = Slider(slider_ax, 'Time', 0, self.duration_sec, valinit=0)
         self.slider.on_changed(self.update_slider)
 
@@ -111,13 +108,13 @@ class WaveformVisualizer:
 
         for line, (mm, _) in zip(self.lines, self.mapped_files):
             if start_sample >= mm.size:
-                line.set_data((np.array([], dtype=np.float32), np.array([], dtype=np.float32)))
+                line.set_data([], [])
                 continue
 
             safe_end = min(end_sample, mm.size)
             if safe_end <= start_sample:
-                 line.set_data((np.array([], dtype=np.float32), np.array([], dtype=np.float32)))
-                 continue
+                line.set_data([], [])
+                continue
 
             chunk = mm[start_sample:safe_end]
 
@@ -129,7 +126,8 @@ class WaveformVisualizer:
                 t_axis = (np.arange(chunk.size) / self.rate + t_origin).astype(np.float32)
 
                 if chunk.size > self.max_visible:
-                    step = chunk.size // self.max_visible
+                    # Ceil division keeps rendered samples <= max_visible
+                    step = (chunk.size + self.max_visible - 1) // self.max_visible
                     normalized = normalized[::step]
                     t_axis = t_axis[::step]
 
@@ -146,7 +144,7 @@ class WaveformVisualizer:
                 global_max_y = max(global_max_y, np.max(normalized))
                 has_data = True
             else:
-                line.set_data((np.array([], dtype=np.float32), np.array([], dtype=np.float32)))
+                line.set_data([], [])
 
         return has_data, float(global_min_y), float(global_max_y)
 
@@ -200,7 +198,7 @@ class WaveformVisualizer:
 
         self.update_view(val, width)
 
-    def on_scroll(self, event: MouseEvent):
+    def on_scroll(self, event: MouseEvent) -> None:
         """Handle zoom."""
         if event.inaxes != self.ax or event.xdata is None:
             return
@@ -227,7 +225,7 @@ class WaveformVisualizer:
         # Then update slider
         self.slider.set_val(new_start)
 
-    def on_xlim_changed(self, ax: Axes):
+    def on_xlim_changed(self, ax: Axes) -> None:
         """Handle external xlim changes (e.g. from Toolbar). Unconstrained load."""
         if self.navigating:
             return
@@ -249,7 +247,7 @@ class WaveformVisualizer:
         finally:
             self.navigating = False
 
-    def on_key(self, event: KeyEvent):
+    def on_key(self, event: KeyEvent) -> None:
         """Handle keyboard shortcuts (Independent Navigation)."""
         if self.navigating:
             return
@@ -323,7 +321,7 @@ class WaveformVisualizer:
             width = xlim[1] - xlim[0]
             self.update_view(xlim[0], width)
 
-    def on_select(self, eclick: MouseEvent, erelease: MouseEvent):
+    def on_select(self, eclick: MouseEvent, erelease: MouseEvent) -> None:
         """Handle rectangle selection."""
         if self.navigating:
             return
