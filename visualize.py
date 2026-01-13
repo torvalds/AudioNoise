@@ -12,6 +12,147 @@ INITIAL_WINDOW_SEC = 2.0
 BYTES_PER_SAMPLE = 4
 MAX_WIDTH_SEC = 2.0  # Max zoom out
 
+
+class FFTAnalyzer:
+    """Frequency-domain analysis for audio signals."""
+
+    def __init__(self, filenames, rate):
+        self.rate = rate
+        self.filenames = filenames
+        self.data = []
+
+        # Load files
+        for f in filenames:
+            try:
+                fsize = os.path.getsize(f)
+                samples = fsize // BYTES_PER_SAMPLE
+                mm = np.memmap(f, dtype=np.int32, mode='r', shape=(samples,))
+                normalized = mm.astype(np.float32) / 2147483648.0
+                self.data.append((normalized, os.path.basename(f)))
+            except Exception as e:
+                print(f"Error opening {f}: {e}")
+
+        if not self.data:
+            return
+
+        self.setup_ui()
+
+    def setup_ui(self):
+        self.fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+        self.fig.suptitle('Frequency Domain Analysis', fontsize=14)
+        plt.subplots_adjust(left=0.08, right=0.95, top=0.92, bottom=0.08, hspace=0.3, wspace=0.25)
+
+        self.ax_mag = axes[0, 0]
+        self.ax_phase = axes[0, 1]
+        self.ax_impulse = axes[1, 0]
+        self.ax_spectrogram = axes[1, 1]
+
+        # Plot for each file
+        colors = plt.cm.tab10.colors
+        for i, (data, name) in enumerate(self.data):
+            color = colors[i % len(colors)]
+            self.plot_magnitude(data, name, color)
+            self.plot_phase(data, name, color)
+            self.plot_impulse_response(data, name, color)
+            self.plot_spectrogram(data, name, i)
+
+        self.ax_mag.legend(loc='upper right', fontsize='x-small')
+        self.ax_phase.legend(loc='upper right', fontsize='x-small')
+        self.ax_impulse.legend(loc='upper right', fontsize='x-small')
+
+        plt.show()
+
+    def plot_magnitude(self, data, name, color):
+        """Plot FFT magnitude response in dB."""
+        # Use a reasonable chunk for analysis (first 2 seconds or full file)
+        n_samples = min(len(data), self.rate * 2)
+        chunk = data[:n_samples]
+
+        # Apply window to reduce spectral leakage
+        window = np.hanning(len(chunk))
+        windowed = chunk * window
+
+        # Compute FFT
+        fft_result = np.fft.rfft(windowed)
+        freqs = np.fft.rfftfreq(len(windowed), 1/self.rate)
+
+        # Convert to dB (magnitude)
+        magnitude = np.abs(fft_result)
+        magnitude_db = 20 * np.log10(magnitude + 1e-10)  # Avoid log(0)
+
+        self.ax_mag.semilogx(freqs[1:], magnitude_db[1:], color=color, label=name, linewidth=0.8, alpha=0.8)
+        self.ax_mag.set_xlabel('Frequency (Hz)')
+        self.ax_mag.set_ylabel('Magnitude (dB)')
+        self.ax_mag.set_title('Magnitude Response')
+        self.ax_mag.grid(True, which='both', linestyle=':', alpha=0.5)
+        self.ax_mag.set_xlim(20, self.rate/2)
+
+    def plot_phase(self, data, name, color):
+        """Plot FFT phase response."""
+        n_samples = min(len(data), self.rate * 2)
+        chunk = data[:n_samples]
+
+        window = np.hanning(len(chunk))
+        windowed = chunk * window
+
+        fft_result = np.fft.rfft(windowed)
+        freqs = np.fft.rfftfreq(len(windowed), 1/self.rate)
+
+        # Unwrap phase for continuity
+        phase = np.unwrap(np.angle(fft_result))
+        phase_deg = np.degrees(phase)
+
+        self.ax_phase.semilogx(freqs[1:], phase_deg[1:], color=color, label=name, linewidth=0.8, alpha=0.8)
+        self.ax_phase.set_xlabel('Frequency (Hz)')
+        self.ax_phase.set_ylabel('Phase (degrees)')
+        self.ax_phase.set_title('Phase Response')
+        self.ax_phase.grid(True, which='both', linestyle=':', alpha=0.5)
+        self.ax_phase.set_xlim(20, self.rate/2)
+
+    def plot_impulse_response(self, data, name, color):
+        """Plot impulse response (beginning of signal or derived)."""
+        # For an effect, the impulse response is what you get when you feed an impulse
+        # Here we show the first ~1000 samples as a proxy
+        n_samples = min(len(data), 1000)
+        chunk = data[:n_samples]
+        t_axis = np.arange(n_samples) / self.rate * 1000  # in ms
+
+        self.ax_impulse.plot(t_axis, chunk, color=color, label=name, linewidth=0.8, alpha=0.8)
+        self.ax_impulse.set_xlabel('Time (ms)')
+        self.ax_impulse.set_ylabel('Amplitude')
+        self.ax_impulse.set_title('Impulse Response (first 1000 samples)')
+        self.ax_impulse.grid(True, linestyle=':', alpha=0.5)
+
+    def plot_spectrogram(self, data, name, index):
+        """Plot spectrogram (time-frequency representation)."""
+        if index > 0:
+            return  # Only plot spectrogram for first file to avoid overlap
+
+        # Use first 5 seconds max
+        n_samples = min(len(data), self.rate * 5)
+        chunk = data[:n_samples]
+
+        # Compute spectrogram
+        nperseg = 1024
+        noverlap = 512
+
+        from scipy.signal import spectrogram as scipy_spectrogram
+        try:
+            f, t, Sxx = scipy_spectrogram(chunk, fs=self.rate, nperseg=nperseg, noverlap=noverlap)
+            Sxx_db = 10 * np.log10(Sxx + 1e-10)
+
+            im = self.ax_spectrogram.pcolormesh(t, f, Sxx_db, shading='gouraud', cmap='magma')
+            self.ax_spectrogram.set_ylabel('Frequency (Hz)')
+            self.ax_spectrogram.set_xlabel('Time (s)')
+            self.ax_spectrogram.set_title(f'Spectrogram: {name}')
+            self.ax_spectrogram.set_ylim(0, 8000)  # Focus on audible range
+            self.fig.colorbar(im, ax=self.ax_spectrogram, label='Power (dB)')
+        except ImportError:
+            # Fallback if scipy not available
+            self.ax_spectrogram.text(0.5, 0.5, 'scipy required for spectrogram',
+                                     ha='center', va='center', transform=self.ax_spectrogram.transAxes)
+            self.ax_spectrogram.set_title('Spectrogram (requires scipy)')
+
 class WaveformVisualizer:
     def __init__(self, filenames, rate, min_zoom_samples=100):
         self.rate = rate
@@ -407,9 +548,13 @@ class WaveformVisualizer:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Linux Audio Waveform Visualizer 2026 (mmap)")
-    parser.add_argument('files', nargs='+', help="Input .bin files (int32)")
+    parser.add_argument('files', nargs='+', help="Input .raw files (int32)")
     parser.add_argument('--rate', type=int, default=48000, help="Sample rate (Hz)")
     parser.add_argument('--min-zoom-samples', type=int, default=100, help="Minimum samples to show when zoomed in")
+    parser.add_argument('--fft', action='store_true', help="Show frequency-domain analysis (FFT magnitude, phase, impulse response)")
     args = parser.parse_args()
 
-    app = WaveformVisualizer(args.files, args.rate, args.min_zoom_samples)
+    if args.fft:
+        app = FFTAnalyzer(args.files, args.rate)
+    else:
+        app = WaveformVisualizer(args.files, args.rate, args.min_zoom_samples)
