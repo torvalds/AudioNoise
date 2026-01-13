@@ -104,7 +104,13 @@ class WaveformVisualizer:
             chunk = mm[start_sample:safe_end]
 
             if chunk.size > 0:
-                normalized = chunk.astype(np.float32) / 2147483648.0
+                # Calculate min/max on int32 chunk to avoid iterating float array
+                c_min = np.min(chunk)
+                c_max = np.max(chunk)
+
+                # In-place normalization to avoid extra allocation
+                normalized = chunk.astype(np.float32)
+                normalized *= (1.0 / 2147483648.0)
 
                 # Precise time axis using arange
                 t_origin = start_sample / self.rate
@@ -119,8 +125,8 @@ class WaveformVisualizer:
                 else:
                     line.set_marker("")
 
-                global_min_y = min(global_min_y, np.min(normalized))
-                global_max_y = max(global_max_y, np.max(normalized))
+                global_min_y = min(global_min_y, c_min / 2147483648.0)
+                global_max_y = max(global_max_y, c_max / 2147483648.0)
                 has_data = True
             else:
                 line.set_data([], [])
