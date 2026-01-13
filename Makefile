@@ -37,6 +37,10 @@ convert.o: $(HEADERS)
 
 convert: convert.o
 
+# JACK host for real-time effect testing (requires libjack-dev)
+jack_host: jack_host.c $(HEADERS)
+	$(CC) $(CFLAGS) -o $@ $< -ljack $(LDLIBS)
+
 output.raw: input.raw convert
 	./convert echo $(echo_defaults) < input.raw > output.raw
 
