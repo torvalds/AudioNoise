@@ -96,13 +96,13 @@ struct sincos fastsincos(float phase)
 	phase -= idx;
 
 	float a = quarter_sin[idx];
-	float b = quarter_sin[idx+1];
+	float b = quarter_sin[(idx+1) & QUARTER_SINE_STEPS];
 
 	float x = a + (b-a)*phase;
 
 	idx = QUARTER_SINE_STEPS - idx;
 	a = quarter_sin[idx];
-	b = quarter_sin[idx+1];
+	b = quarter_sin[(idx+1) & QUARTER_SINE_STEPS];
 
 	float y = a + (a - b)*phase;
 
