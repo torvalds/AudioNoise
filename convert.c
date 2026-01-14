@@ -23,6 +23,7 @@ typedef unsigned int uint;
 #include "am.h"
 #include "phaser.h"
 #include "discont.h"
+#include "tremolo.h"
 
 struct {
 	float attack, decay, value;
@@ -49,7 +50,7 @@ struct effect {
 	float (*step)(float);
 } effects[] = {
 	EFF(discont), EFF(phaser), EFF(flanger), EFF(echo),
-	EFF(fm), EFF(am),
+	EFF(fm), EFF(am), EFF(tremolo),
 	EFF(magnitude),
 };
 
