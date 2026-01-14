@@ -71,8 +71,11 @@ int main(int argc, char **argv)
 			eff = effects+i;
 	}
 
-	for (int i = 0; i < 4; i++)
+	for (int i = 0; i < 4; i++) {
 		pot[i] = atof(argv[2+i]);
+		if (!isfinite(pot[i]))
+			pot[i] = 0;
+	}
 
 	fprintf(stderr, "Playing %s(%f,%f,%f,%f)\n",
 		eff->name, pot[0], pot[1], pot[2], pot[3]);
