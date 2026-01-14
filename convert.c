@@ -79,7 +79,8 @@ static void *modify_pots(void *arg)
 {
 	struct effect *eff = arg;
 
-	for (;;) {
+	for (;;)
+	{
 		char buf[5];
 		int n = read(pot_control, buf, sizeof(buf));
 		if (n <= 0)
@@ -121,6 +122,8 @@ int main(int argc, char **argv)
 		float val = strtof(arg, &endptr);
 		if (endptr != arg) {
 			if (potnr < 4) {
+				if (!isfinite(val))
+					val = 0.5;
 				pots[potnr++] = val;
 				continue;
 			}
@@ -180,6 +183,11 @@ int main(int argc, char **argv)
 	if (output < 0)
 		output = 1;
 
+	if (!eff) {
+		fprintf(stderr, "No effect specified\n");
+		exit(1);
+	}
+
 #ifdef F_SETPIPE_SZ
 	// Limit the output buffer size if we are
 	// writing to a pipe. At least on Linux,
@@ -195,7 +203,8 @@ int main(int argc, char **argv)
 	if (pot_control >= 0)
 		pthread_create(&pot_thread, NULL, modify_pots, eff);
 
-	for (;;) {
+	for (;;)
+	{
 		eff->init(pots);
 		if (make_one_noise(input, output, eff) <= 0)
 			break;
