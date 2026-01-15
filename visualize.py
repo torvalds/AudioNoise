@@ -1,11 +1,14 @@
-import sys
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
-from matplotlib.widgets import Slider, RectangleSelector
-
 import os
+import tkinter as tk
 import argparse
+import numpy as np
+from matplotlib.figure import Figure
+from matplotlib.axes import Axes
+from matplotlib.widgets import Slider, RectangleSelector
+from matplotlib.lines import Line2D
+from matplotlib.backend_bases import MouseButton, MouseEvent, KeyEvent, FigureCanvasBase
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import matplotlib.ticker as mticker
 
 # --- Constants ---
 INITIAL_WINDOW_SEC = 2.0
@@ -13,16 +16,24 @@ BYTES_PER_SAMPLE = 4
 MAX_WIDTH_SEC = 2.0  # Max zoom out
 
 class WaveformVisualizer:
-    def __init__(self, filenames, rate, min_zoom_samples=100):
+    def __init__(self, filenames: list[str], rate: int, min_zoom_samples: int, max_visible: int) -> None:
         self.rate = rate
         self.navigating = False
         self.filenames = filenames
         self.min_zoom_samples = min_zoom_samples
         self.min_width_sec = min_zoom_samples / rate
+        self.max_visible = max_visible
 
-        self.mapped_files = []
-        self.lines = []
+        self.mapped_files: list[tuple[np.memmap, str]] = []
+        self.lines: list[Line2D] = []
         self.max_samples = 0
+        self.root = tk.Tk()
+        self.root.title("Waveform Visualizer")
+        self.fig: Figure
+        self.ax: Axes
+        self.slider: Slider
+        self.canvas: FigureCanvasBase
+        self.duration_sec: float
 
         # Load files
         for f in filenames:
@@ -32,7 +43,7 @@ class WaveformVisualizer:
                 mm = np.memmap(f, dtype=np.int32, mode='r', shape=(samples,))
                 self.mapped_files.append((mm, os.path.basename(f)))
                 self.max_samples = max(self.max_samples, samples)
-            except Exception as e:
+            except (OSError, ValueError) as e:
                 print(f"Error opening {f}: {e}")
 
         if not self.mapped_files:
@@ -41,36 +52,41 @@ class WaveformVisualizer:
         self.duration_sec = self.max_samples / self.rate
         self.setup_ui()
 
-    def setup_ui(self):
-        self.fig, self.ax = plt.subplots(figsize=(12, 6))
+    def setup_ui(self) -> None:
+        self.fig = Figure(figsize=(12, 6))
+        self.ax = self.fig.add_subplot()
+        self.canvas = FigureCanvasTkAgg(self.fig, master=self.root)
+        self.canvas.draw()
+        self.canvas.get_tk_widget().pack(fill="both", expand=True)
         # Manual "tight layout" to maximize space but keep room for slider
-        plt.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.15)
+        self.fig.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.15)
 
         # Create line objects
         for _, name in self.mapped_files:
-            line, = self.ax.plot([], [], linewidth=0.8, label=name)
+            line = Line2D([], [], linewidth=0.8, label=name)
+            self.ax.add_line(line)
             self.lines.append(line)
 
         self.ax.grid(True, which='both', linestyle=':', alpha=0.5)
         self.ax.set_xlabel("Time (s)")
         self.ax.set_ylabel("Amplitude")
         self.ax.legend(loc='upper right', fontsize='x-small')
-
+        self.ax.xaxis.set_major_formatter(mticker.FormatStrFormatter('%.3f'))
         # Slider setup
-        ax_slider = plt.axes([0.15, 0.05, 0.7, 0.03])
-        self.slider = Slider(ax_slider, 'Time', 0, self.duration_sec, valinit=0)
+        slider_ax: Axes = self.fig.add_axes([0.15, 0.05, 0.7, 0.03])
+        self.slider = Slider(slider_ax, 'Time', 0, self.duration_sec, valinit=0)
         self.slider.on_changed(self.update_slider)
 
         # Scroll Zoom setup
-        self.fig.canvas.mpl_connect('scroll_event', self.on_scroll)
-        self.fig.canvas.mpl_connect('key_press_event', self.on_key)
+        self.canvas.mpl_connect('scroll_event', self.on_scroll)
+        self.canvas.mpl_connect('key_press_event', self.on_key)
         self.ax.callbacks.connect('xlim_changed', self.on_xlim_changed)
 
         # Custom Rectangle Selector
         self.rs = RectangleSelector(
             self.ax, self.on_select,
             useblit=True,
-            button=[1],  # Left mouse button
+            button=[MouseButton.LEFT],  # Left mouse button
             minspanx=5, minspany=5,
             spancoords='pixels',
             interactive=False
@@ -78,10 +94,9 @@ class WaveformVisualizer:
 
         # Initial View
         self.update_view(0, INITIAL_WINDOW_SEC)
+        self.canvas.draw_idle()
 
-        plt.show()
-
-    def get_chunk(self, start_time, window_duration):
+    def get_chunk(self, start_time: float, window_duration: float) -> tuple[bool, float, float]:
         start_sample = int(start_time * self.rate)
         # Ensure we don't request negative start
         start_sample = max(0, start_sample)
@@ -98,8 +113,8 @@ class WaveformVisualizer:
 
             safe_end = min(end_sample, mm.size)
             if safe_end <= start_sample:
-                 line.set_data([], [])
-                 continue
+                line.set_data([], [])
+                continue
 
             chunk = mm[start_sample:safe_end]
 
@@ -108,7 +123,13 @@ class WaveformVisualizer:
 
                 # Precise time axis using arange
                 t_origin = start_sample / self.rate
-                t_axis = np.arange(chunk.size) / self.rate + t_origin
+                t_axis = (np.arange(chunk.size) / self.rate + t_origin).astype(np.float32)
+
+                if chunk.size > self.max_visible:
+                    # Ceil division keeps rendered samples <= max_visible
+                    step = (chunk.size + self.max_visible - 1) // self.max_visible
+                    normalized = normalized[::step]
+                    t_axis = t_axis[::step]
 
                 line.set_data(t_axis, normalized)
 
@@ -125,11 +146,12 @@ class WaveformVisualizer:
             else:
                 line.set_data([], [])
 
-        return has_data, global_min_y, global_max_y
+        return has_data, float(global_min_y), float(global_max_y)
 
-    def update_view(self, start_time, width):
+    def update_view(self, start_time: float, width: float) -> None:
         """Core update logic: loads data and sets limits (Constrained Mode)."""
-        if self.navigating: return
+        if self.navigating:
+            return
         self.navigating = True
         try:
             # Clamp width
@@ -155,29 +177,31 @@ class WaveformVisualizer:
 
                 self.ax.set_ylim(-max_val, max_val)
             else:
-                 # Default fallback if no data
-                 self.ax.set_ylim(-1.0, 1.0)
-
-            self.fig.canvas.draw_idle()
+                # Default fallback if no data
+                self.ax.set_ylim(-1.0, 1.0)
+            self.canvas.draw_idle()
         finally:
             self.navigating = False
 
-    def update_slider(self, val):
+    def update_slider(self, val: float) -> None:
         """Callback for slider change."""
-        if self.navigating: return
+        if self.navigating:
+            return
 
         # Get current width from the main property
         current_xlim = self.ax.get_xlim()
         width = current_xlim[1] - current_xlim[0]
 
         # Fallback for init
-        if width <= 0: width = INITIAL_WINDOW_SEC
+        if width <= 0:
+            width = INITIAL_WINDOW_SEC
 
         self.update_view(val, width)
 
-    def on_scroll(self, event):
+    def on_scroll(self, event: MouseEvent) -> None:
         """Handle zoom."""
-        if event.inaxes != self.ax: return
+        if event.inaxes != self.ax or event.xdata is None:
+            return
 
         xlim = self.ax.get_xlim()
         cur_width = xlim[1] - xlim[0]
@@ -201,9 +225,10 @@ class WaveformVisualizer:
         # Then update slider
         self.slider.set_val(new_start)
 
-    def on_xlim_changed(self, ax):
+    def on_xlim_changed(self, ax: Axes) -> None:
         """Handle external xlim changes (e.g. from Toolbar). Unconstrained load."""
-        if self.navigating: return
+        if self.navigating:
+            return
         self.navigating = True
         try:
             xlim = ax.get_xlim()
@@ -222,9 +247,10 @@ class WaveformVisualizer:
         finally:
             self.navigating = False
 
-    def on_key(self, event):
+    def on_key(self, event: KeyEvent) -> None:
         """Handle keyboard shortcuts (Independent Navigation)."""
-        if self.navigating: return
+        if self.navigating:
+            return
         self.navigating = True
         try:
             # Get properties
@@ -284,10 +310,10 @@ class WaveformVisualizer:
                     self.slider.set_val(new_xlim[0])
                     self.slider.eventson = old_eventson
 
-                self.fig.canvas.draw_idle()
+                self.canvas.draw_idle()
 
         finally:
-             self.navigating = False
+            self.navigating = False
 
         # Space Bar (Reset Zoom) - Only reset Y axis to fit visible data (Auto-scale)
         if event.key == ' ':
@@ -295,13 +321,17 @@ class WaveformVisualizer:
             width = xlim[1] - xlim[0]
             self.update_view(xlim[0], width)
 
-    def on_select(self, eclick, erelease):
+    def on_select(self, eclick: MouseEvent, erelease: MouseEvent) -> None:
         """Handle rectangle selection."""
-        if self.navigating: return
+        if self.navigating:
+            return
 
         # Calculate new ranges from the selection
         x1, y1 = eclick.xdata, eclick.ydata
         x2, y2 = erelease.xdata, erelease.ydata
+
+        if x1 is None or x2 is None or y1 is None or y2 is None:
+            return
 
         start_time = min(x1, x2)
         end_time = max(x1, x2)
@@ -334,31 +364,32 @@ class WaveformVisualizer:
 
         # So let's set limits directly, similar to on_scroll/on_key, but for both axes.
 
-        if self.navigating: return
+        if self.navigating:
+            return
         self.navigating = True
         try:
-             # X Axis Logic
-             new_width = max(self.min_width_sec, min(width, MAX_WIDTH_SEC))
-             # If user selected < min width, we centered it above.
+            # X Axis Logic
+            new_width = max(self.min_width_sec, min(width, MAX_WIDTH_SEC))
+            # If user selected < min width, we centered it above.
 
-             self.get_chunk(start_time, new_width)
+            self.get_chunk(start_time, new_width)
 
-             self.ax.set_xlim(start_time, start_time + new_width)
+            self.ax.set_xlim(start_time, start_time + new_width)
 
-             # Y Axis Logic
-             y_min = min(y1, y2)
-             y_max = max(y1, y2)
+            # Y Axis Logic
+            y_min = min(y1, y2)
+            y_max = max(y1, y2)
 
-             self.ax.set_ylim(y_min, y_max)
+            self.ax.set_ylim(y_min, y_max)
 
-             self.fig.canvas.draw_idle()
+            self.canvas.draw_idle()
 
-             # Sync Slider
-             if hasattr(self, 'slider'):
-                 old_eventson = self.slider.eventson
-                 self.slider.eventson = False
-                 self.slider.set_val(start_time)
-                 self.slider.eventson = old_eventson
+            # Sync Slider
+            if hasattr(self, 'slider'):
+                old_eventson = self.slider.eventson
+                self.slider.eventson = False
+                self.slider.set_val(start_time)
+                self.slider.eventson = old_eventson
 
         finally:
             self.navigating = False
@@ -369,6 +400,8 @@ if __name__ == "__main__":
     parser.add_argument('files', nargs='+', help="Input .bin files (int32)")
     parser.add_argument('--rate', type=int, default=48000, help="Sample rate (Hz)")
     parser.add_argument('--min-zoom-samples', type=int, default=100, help="Minimum samples to show when zoomed in")
+    parser.add_argument('--max-visible', type=int, default=8000, help="Maximum number of samples rendered per line (downsampling limit)")
     args = parser.parse_args()
 
-    app = WaveformVisualizer(args.files, args.rate, args.min_zoom_samples)
+    app = WaveformVisualizer(args.files, args.rate, args.min_zoom_samples, args.max_visible)
+    app.root.mainloop()
