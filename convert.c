@@ -21,6 +21,7 @@
 #include "phaser.h"
 #include "discont.h"
 #include "distortion.h"
+#include "tremolo.h"
 
 static void magnitude_init(float pot1, float pot2, float pot3, float pot4) {}
 static float magnitude_step(float in) { return u32_to_fraction(magnitude); }
@@ -36,6 +37,7 @@ struct effect {
 	EFF(echo),
 	EFF(flanger),
 	EFF(phaser),
+	EFF(tremolo),
 
 	/* "Helper" effects */
 	EFF(am),
