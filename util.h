@@ -1,3 +1,5 @@
+#include <string.h>
+
 // Various utility functions mainly for
 // imprecise but fast floating point
 
@@ -38,9 +40,13 @@ static inline float fastpow2_m1(float x)
 
 static inline float fastpow(float a, float b)
 {
-	union { float f; int i; } u = { a };
-	u.i = (int) (b * (u.i - 1072632447) + 1072632447.0f);
-	return u.f;
+    int i;
+	float r;
+	
+    memcpy(&i, &a, sizeof(i));
+    i = (int)(b * (i - 1072632447) + 1072632447.0f);
+    memcpy(&r, &i, sizeof(r));
+    return r;
 }
 
 // Very random - but quick - function to smoothly
