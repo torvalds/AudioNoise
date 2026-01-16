@@ -14,9 +14,9 @@ void phaser_init(float pot1, float pot2, float pot3, float pot4)
 	set_lfo_ms(&phaser.lfo, ms);
 	phaser.feedback = linear(pot2, 0, 0.75);
 
-	pot3 = 2*pot3;
-	phaser.center_f = linear(pot3*pot3*pot3, 50, 880);	// 50Hz .. 1kHz
-	phaser.octaves = 4;
+	pot3 = 4*pot3*pot3;				// 0..4, center=1
+	phaser.center_f = linear(pot3, 220, 880);	// 220Hz .. ~3kHz (center at 880)
+	phaser.octaves = 2;				// 55Hz .. ~12kHz
 	phaser.Q = linear(pot4, 0.25, 2);
 
 	fprintf(stderr, "phaser:");
