@@ -1,76 +1,121 @@
 #!/usr/bin/env python3
 """
-AudioNoise TUI - Simple Terminal UI for turning virtual "pots" and picking effects.
+AudioNoise TUI - Real-time control interface for effects and pots.
 
-A minimal curses-based TUI as requested by Linus Torvalds:
-"Some UI (whether T or G) for actually turning the virtual 'pots' and 
-picking the effect would probably be interesting. Right now I just do 
-it all manually. But only something simple."
+Implements the --control= interface from commit ea71138 for dynamic
+pot adjustment while audio is playing.
 
-Dependencies: Python 3.x with curses (standard library - no external deps)
-Requirements: ffmpeg, ffplay, and the AudioNoise 'convert' binary
+Features:
+- Dynamically reads effects and defaults from Makefile
+- Real-time pot control via pXYY commands
+- Visual knobs with rotating pointers
+- Uses aplay -B 100 for ~100ms latency
 
 Usage:
     cd AudioNoise
     python3 tui.py
 
-License: GPL-2.0 (same as AudioNoise)
+License: GPL-2.0
 """
 
 import curses
 import subprocess
 import os
 import sys
+import signal
+import shutil
+import re
 from pathlib import Path
 
 SAMPLE_RATE = 48000
-SAMPLE_FORMAT = 's32le'
-CHANNELS = 'mono'
 
-EFFECTS = {
-    'flanger': {
-        'defaults': [0.6, 0.6, 0.6, 0.6],
-        'pots': ['Depth', 'Rate', 'Feedback', 'Mix'],
-        'desc': 'Modulated delay - jet-plane swoosh'
-    },
-    'echo': {
-        'defaults': [0.3, 0.3, 0.3, 0.3],
-        'pots': ['Delay', 'Feedback', 'Mix', 'Tone'],
-        'desc': 'Delay loop up to 1.25 seconds'
-    },
-    'fm': {
-        'defaults': [0.25, 0.25, 0.5, 0.5],
-        'pots': ['Mod Depth', 'Mod Rate', 'Carrier', 'Mix'],
-        'desc': 'Frequency modulation synthesis'
-    },
-    'am': {
-        'defaults': [0.5, 0.5, 0.5, 0.5],
-        'pots': ['Depth', 'Rate', 'Shape', 'Mix'],
-        'desc': 'Amplitude modulation'
-    },
-    'phaser': {
-        'defaults': [0.3, 0.3, 0.5, 0.5],
-        'pots': ['Depth', 'Rate', 'Stages', 'Feedback'],
-        'desc': 'All-pass filter sweep'
-    },
-    'discont': {
-        'defaults': [0.8, 0.1, 0.2, 0.2],
-        'pots': ['Pitch', 'Rate', 'Blend', 'Mix'],
-        'desc': 'Pitch shift via crossfade'
-    },
+# Known pot names for effects (fallback: Pot1-4)
+POT_NAMES = {
+    'flanger':     ['Depth', 'Rate', 'Fback', 'Mix'],
+    'echo':        ['Delay', 'Fback', 'Mix', 'Tone'],
+    'fm':          ['Depth', 'Rate', 'Carr', 'Mix'],
+    'am':          ['Depth', 'Rate', 'Shape', 'Mix'],
+    'phaser':      ['Depth', 'Rate', 'Stage', 'Fback'],
+    'discont':     ['Pitch', 'Rate', 'Blend', 'Mix'],
+    'distortion':  ['Drive', 'Tone', 'Level', 'Mix'],
+    'tube':        ['Drive', 'Tone', 'Mix', 'Bias'],
+    'growlingbass': ['Sub', 'Odd', 'Even', 'Tone'],
 }
 
-EFFECT_NAMES = list(EFFECTS.keys())
+
+def parse_makefile():
+    """Parse Makefile to get effects and defaults dynamically."""
+    effects = {}
+    effect_order = []
+    
+    makefile = Path('Makefile')
+    if not makefile.exists():
+        # Fallback if no Makefile
+        return {
+            'flanger':    [60, 60, 60, 60],
+            'echo':       [30, 30, 30, 30],
+            'phaser':     [30, 30, 50, 50],
+        }, ['flanger', 'echo', 'phaser']
+    
+    content = makefile.read_text()
+    
+    # Find effects list: "effects = flanger echo fm ..."
+    match = re.search(r'^effects\s*=\s*(.+)$', content, re.MULTILINE)
+    if match:
+        effect_order = match.group(1).split()
+    
+    # Find defaults: "flanger_defaults = 0.6 0.6 0.6 0.6"
+    for effect in effect_order:
+        pattern = rf'^{re.escape(effect)}_defaults\s*=\s*(.+)$'
+        match = re.search(pattern, content, re.MULTILINE)
+        if match:
+            floats = [float(x) for x in match.group(1).split()[:4]]
+            defaults = [int(f * 100) for f in floats]
+            while len(defaults) < 4:
+                defaults.append(50)
+            effects[effect] = defaults
+        else:
+            effects[effect] = [50, 50, 50, 50]
+    
+    return effects, effect_order
+
+
+def get_knob(value):
+    """Return knob visual for value 0-99."""
+    pointers = ['↙', '←', '↖', '↑', '↗', '→', '↘']
+    ptr_idx = int(value * 6 / 99) if value > 0 else 0
+    pointer = pointers[min(ptr_idx, 6)]
+    return [
+        "╭───╮",
+        f"│ {pointer} │",
+        "╰───╯",
+    ]
 
 
 class AudioNoiseTUI:
     def __init__(self, stdscr):
         self.stdscr = stdscr
+        
+        # Load effects from Makefile
+        defaults, self.effect_order = parse_makefile()
+        self.effects = {name: list(vals) for name, vals in defaults.items()}
+        self.pot_values = {name: list(vals) for name, vals in defaults.items()}
+        
         self.effect_idx = 0
         self.pot_idx = 0
-        self.pot_values = {name: list(e['defaults']) for name, e in EFFECTS.items()}
         self.status = ''
-        self.status_ok = True
+        self.playing = False
+        self.proc = None
+        self.player = None
+        self.control_write = None
+        
+        # Detect audio player
+        if shutil.which('aplay'):
+            self.player_cmd = 'aplay'
+        elif shutil.which('ffplay'):
+            self.player_cmd = 'ffplay'
+        else:
+            self.player_cmd = None
         
         curses.curs_set(0)
         curses.start_color()
@@ -79,196 +124,290 @@ class AudioNoiseTUI:
         curses.init_pair(2, curses.COLOR_GREEN, -1)
         curses.init_pair(3, curses.COLOR_YELLOW, -1)
         curses.init_pair(4, curses.COLOR_RED, -1)
+        curses.init_pair(5, curses.COLOR_MAGENTA, -1)
         
         self._check_environment()
     
     def _check_environment(self):
-        if not Path('convert').exists() and not Path('./convert').exists():
-            self.status = "Warning: 'convert' not found. Run 'make convert' first."
-            self.status_ok = False
+        if not Path('./convert').exists():
+            self.status = "Run 'make convert' first"
+        elif not self.player_cmd:
+            self.status = "No audio player (need aplay or ffplay)"
         elif not Path('input.raw').exists():
-            mp3_files = list(Path('.').glob('*.mp3'))
-            if mp3_files:
-                self.status = f"Will convert {mp3_files[0].name} to input.raw"
+            mp3 = list(Path('.').glob('*.mp3'))
+            if mp3:
+                self.status = f"Converting {mp3[0].name}..."
+                try:
+                    subprocess.run([
+                        'ffmpeg', '-y', '-v', 'fatal', '-i', str(mp3[0]),
+                        '-f', 's32le', '-ar', str(SAMPLE_RATE), '-ac', '1', 'input.raw'
+                    ], check=True)
+                    self.status = "Ready"
+                except:
+                    self.status = "ffmpeg conversion failed"
             else:
-                self.status = "No input.raw or .mp3 found"
-                self.status_ok = False
+                self.status = "No input.raw or .mp3"
         else:
-            self.status = "Ready - press 'p' to process, 'q' to quit"
+            self.status = "Ready"
     
     @property
     def effect(self):
-        return EFFECT_NAMES[self.effect_idx]
-    
-    @property
-    def effect_data(self):
-        return EFFECTS[self.effect]
+        return self.effect_order[self.effect_idx]
     
     @property
     def pots(self):
         return self.pot_values[self.effect]
     
+    @property
+    def pot_names(self):
+        return POT_NAMES.get(self.effect, ['Pot 1', 'Pot 2', 'Pot 3', 'Pot 4'])
+    
+    def send_pot(self, pot_idx, value):
+        """Send pot command: pXYY\\n"""
+        if self.control_write and self.playing:
+            cmd = f"p{pot_idx}{value:02d}\n"
+            try:
+                os.write(self.control_write, cmd.encode())
+            except:
+                pass
+    
+    def start_playback(self):
+        if self.playing:
+            self.stop_playback()
+        
+        if not Path('input.raw').exists() or not self.player_cmd:
+            return
+        
+        ctrl_read, ctrl_write = os.pipe()
+        self.control_write = ctrl_write
+        
+        pots_float = [f"{v/100:.2f}" for v in self.pots]
+        
+        try:
+            input_fd = os.open('input.raw', os.O_RDONLY)
+            
+            self.proc = subprocess.Popen(
+                ['./convert', f'--control={ctrl_read}', self.effect] + pots_float,
+                stdin=input_fd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                pass_fds=(ctrl_read,)
+            )
+            os.close(input_fd)
+            os.close(ctrl_read)
+            
+            if self.player_cmd == 'aplay':
+                self.player = subprocess.Popen(
+                    ['aplay', '-c1', '-r', str(SAMPLE_RATE), '-f', 's32', '-B', '100', '-q'],
+                    stdin=self.proc.stdout,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+            else:
+                self.player = subprocess.Popen(
+                    ['ffplay', '-v', 'fatal', '-nodisp', '-autoexit',
+                     '-f', 's32le', '-ar', str(SAMPLE_RATE), '-ch_layout', 'mono', '-i', 'pipe:0'],
+                    stdin=self.proc.stdout,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+            
+            self.playing = True
+            latency = "~100ms" if self.player_cmd == 'aplay' else "high latency"
+            self.status = f"Playing {self.effect} ({latency})"
+            
+        except Exception as e:
+            self.status = f"Error: {e}"
+            if self.control_write:
+                os.close(self.control_write)
+                self.control_write = None
+    
+    def stop_playback(self):
+        if self.control_write:
+            try:
+                os.close(self.control_write)
+            except:
+                pass
+            self.control_write = None
+        
+        for p in [self.player, self.proc]:
+            if p:
+                try:
+                    p.terminate()
+                    p.wait(timeout=0.5)
+                except:
+                    pass
+        
+        self.player = None
+        self.proc = None
+        self.playing = False
+        self.status = "Stopped"
+    
+    def check_playback(self):
+        if self.playing and self.proc and self.proc.poll() is not None:
+            self.stop_playback()
+            self.status = "Finished"
+    
     def draw(self):
-        self.stdscr.clear()
+        self.stdscr.erase()
         h, w = self.stdscr.getmaxyx()
         
-        if h < 18 or w < 50:
-            self.stdscr.addstr(0, 0, "Terminal too small (need 50x18)")
-            self.stdscr.refresh()
+        if h < 20 or w < 60:
+            self.stdscr.addstr(0, 0, "Terminal too small (need 60x20)")
+            self.stdscr.noutrefresh()
+            curses.doupdate()
             return
         
-        title = "═══ AUDIONOISE TUI ═══"
-        self.stdscr.addstr(0, (w - len(title)) // 2, title, 
-                          curses.color_pair(1) | curses.A_BOLD)
+        # Title
+        title = "═══════════ AUDIONOISE ═══════════"
+        self.stdscr.addstr(0, (w - len(title)) // 2, title, curses.color_pair(1) | curses.A_BOLD)
         
-        self.stdscr.addstr(2, 2, "EFFECT:", curses.A_BOLD)
-        for i, name in enumerate(EFFECT_NAMES):
+        # Effect selector with scrolling
+        self.stdscr.addstr(2, 3, "EFFECT", curses.A_BOLD | curses.color_pair(1))
+        
+        max_visible = min(9, len(self.effect_order))
+        start = max(0, min(self.effect_idx - max_visible // 2, 
+                          len(self.effect_order) - max_visible))
+        
+        for i in range(max_visible):
+            idx = start + i
+            if idx >= len(self.effect_order):
+                break
             y = 3 + i
-            selected = i == self.effect_idx
-            
-            if selected:
-                marker = ">"
-                attr = curses.color_pair(2) | curses.A_BOLD
+            name = self.effect_order[idx]
+            if idx == self.effect_idx:
+                display = f"▶ {name.upper()}"[:14]
+                self.stdscr.addstr(y, 3, display, curses.color_pair(2) | curses.A_BOLD)
             else:
-                marker = " "
-                attr = curses.A_DIM
-            
-            self.stdscr.addstr(y, 2, f" {marker} {name.upper()}", attr)
+                display = f"  {name}"[:14]
+                self.stdscr.addstr(y, 3, display, curses.A_DIM)
         
-        self.stdscr.addstr(3, 20, self.effect_data['desc'], curses.A_DIM)
+        # Knobs
+        knob_x = 20
+        knob_spacing = 10
         
-        self.stdscr.addstr(10, 2, "POTS:", curses.A_BOLD)
+        self.stdscr.addstr(2, knob_x, "──── POTS ────", curses.A_BOLD | curses.color_pair(1))
         
-        pot_names = self.effect_data['pots']
         for i in range(4):
-            y = 11 + i
-            selected = i == self.pot_idx
-            value = self.pots[i]
-            name = pot_names[i]
+            x = knob_x + (i * knob_spacing)
+            selected = (i == self.pot_idx)
+            val = self.pots[i]
             
-            if selected:
-                attr = curses.color_pair(3) | curses.A_BOLD
-            else:
-                attr = curses.A_NORMAL
+            knob = get_knob(val)
+            color = curses.color_pair(3) if selected else curses.A_NORMAL
             
-            self.stdscr.addstr(y, 2, f" {name:12}", attr)
+            for j, line in enumerate(knob):
+                self.stdscr.addstr(4 + j, x, line, color | (curses.A_BOLD if selected else 0))
             
-            bar_width = min(20, w - 30)
-            filled = int(value * bar_width)
-            bar = "#" * filled + "-" * (bar_width - filled)
+            self.stdscr.addstr(7, x + 1, f"{val:02d}", 
+                             curses.color_pair(2) if selected else curses.A_DIM)
             
-            bar_attr = curses.color_pair(2) if selected else curses.A_DIM
-            self.stdscr.addstr(y, 16, f"[{bar}]", bar_attr)
-            self.stdscr.addstr(y, 18 + bar_width, f" {value:.2f}", attr)
+            label = self.pot_names[i][:5]
+            self.stdscr.addstr(8, x, f"{label:^5}", 
+                             curses.color_pair(5) if selected else curses.A_DIM)
         
-        self.stdscr.addstr(16, 2, "Keys:", curses.color_pair(3))
-        self.stdscr.addstr(16, 8, "Up/Down=effect  Tab=pot  Left/Right=value  p=play  r=reset  q=quit", curses.A_DIM)
+        # Playing indicator
+        if self.playing:
+            self.stdscr.addstr(2, w - 16, "♪♫ PLAYING ♫♪", 
+                             curses.color_pair(4) | curses.A_BOLD | curses.A_BLINK)
         
-        status_attr = curses.color_pair(2) if self.status_ok else curses.color_pair(4)
-        self.stdscr.addstr(h - 1, 0, self.status[:w-1], status_attr)
+        # Info box
+        box_y = 13
+        self.stdscr.addstr(box_y, 3, "┌" + "─" * 54 + "┐", curses.color_pair(1))
+        self.stdscr.addstr(box_y + 1, 3, "│", curses.color_pair(1))
         
-        self.stdscr.refresh()
-    
-    def process_and_play(self):
-        effect = self.effect
-        pots = self.pots
+        info = f" {self.effect.upper()}: "
+        for i, name in enumerate(self.pot_names[:4]):
+            info += f"{name[:5]}={self.pots[i]:02d} "
+        self.stdscr.addstr(box_y + 1, 4, info[:54].ljust(54), curses.A_BOLD)
+        self.stdscr.addstr(box_y + 1, 58, "│", curses.color_pair(1))
+        self.stdscr.addstr(box_y + 2, 3, "└" + "─" * 54 + "┘", curses.color_pair(1))
         
-        self.status = f"Processing {effect}..."
-        self.status_ok = True
-        self.draw()
+        # Controls
+        ctrl_y = 17
+        self.stdscr.addstr(ctrl_y, 3, "CONTROLS", curses.color_pair(1) | curses.A_BOLD)
+        self.stdscr.addstr(ctrl_y + 1, 3, "↑/↓", curses.color_pair(3))
+        self.stdscr.addstr(ctrl_y + 1, 7, "effect", curses.A_DIM)
+        self.stdscr.addstr(ctrl_y + 1, 16, "Tab", curses.color_pair(3))
+        self.stdscr.addstr(ctrl_y + 1, 20, "pot", curses.A_DIM)
+        self.stdscr.addstr(ctrl_y + 1, 26, "←/→", curses.color_pair(3))
+        self.stdscr.addstr(ctrl_y + 1, 30, "value", curses.A_DIM)
+        self.stdscr.addstr(ctrl_y + 1, 38, "SPACE", curses.color_pair(3))
+        self.stdscr.addstr(ctrl_y + 1, 44, "play/stop", curses.A_DIM)
+        self.stdscr.addstr(ctrl_y + 1, 54, "r", curses.color_pair(3))
+        self.stdscr.addstr(ctrl_y + 1, 56, "reset", curses.A_DIM)
         
-        if not Path('input.raw').exists():
-            mp3_files = list(Path('.').glob('*.mp3'))
-            if not mp3_files:
-                self.status = "Error: No input file found"
-                self.status_ok = False
-                return
-            
-            try:
-                subprocess.run([
-                    'ffmpeg', '-y', '-v', 'fatal',
-                    '-i', str(mp3_files[0]),
-                    '-f', SAMPLE_FORMAT, '-ar', str(SAMPLE_RATE), '-ac', '1',
-                    'input.raw'
-                ], check=True)
-            except (subprocess.CalledProcessError, FileNotFoundError) as e:
-                self.status = f"Error converting input: {e}"
-                self.status_ok = False
-                return
+        # Status bar
+        status_color = curses.color_pair(2) if self.playing else curses.A_NORMAL
+        status_text = f" {self.status}"[:w-1].ljust(w-1)
+        self.stdscr.addstr(h - 1, 0, status_text, status_color | curses.A_REVERSE)
         
-        convert_path = './convert' if Path('./convert').exists() else 'convert'
-        if not Path(convert_path).exists():
-            self.status = "Error: 'convert' not found - run 'make convert'"
-            self.status_ok = False
-            return
-        
-        try:
-            with open('input.raw', 'rb') as infile, open('output.raw', 'wb') as outfile:
-                result = subprocess.run(
-                    [convert_path, effect] + [f'{p:.2f}' for p in pots],
-                    stdin=infile,
-                    stdout=outfile,
-                    stderr=subprocess.PIPE,
-                    check=True
-                )
-        except subprocess.CalledProcessError as e:
-            self.status = f"Processing failed: {e.stderr.decode() if e.stderr else e}"
-            self.status_ok = False
-            return
-        except FileNotFoundError:
-            self.status = "Error: convert binary not found"
-            self.status_ok = False
-            return
-        
-        try:
-            subprocess.Popen([
-                'ffplay', '-v', 'fatal', '-nodisp', '-autoexit',
-                '-f', SAMPLE_FORMAT, '-ar', str(SAMPLE_RATE), 
-                '-ch_layout', CHANNELS, '-i', 'output.raw'
-            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            
-            self.status = f"Playing: {effect} [{', '.join(f'{p:.2f}' for p in pots)}]"
-            self.status_ok = True
-        except FileNotFoundError:
-            self.status = "Processed output.raw but ffplay not found for playback"
-            self.status_ok = False
+        self.stdscr.noutrefresh()
+        curses.doupdate()
     
     def reset_pots(self):
-        self.pot_values[self.effect] = list(self.effect_data['defaults'])
-        self.status = f"Reset {self.effect} to defaults"
-        self.status_ok = True
+        self.pot_values[self.effect] = list(self.effects[self.effect])
+        if self.playing:
+            for i, v in enumerate(self.pots):
+                self.send_pot(i, v)
+        self.status = f"Reset {self.effect}"
+    
+    def change_effect(self, direction):
+        new_idx = (self.effect_idx + direction) % len(self.effect_order)
+        self.effect_idx = new_idx
+        if self.playing:
+            self.stop_playback()
+            self.start_playback()
     
     def run(self):
+        self.stdscr.timeout(100)
+        
         while True:
+            self.check_playback()
             self.draw()
             
-            key = self.stdscr.getch()
+            try:
+                key = self.stdscr.getch()
+            except:
+                key = -1
             
-            if key == ord('q') or key == ord('Q'):
+            if key == -1:
+                continue
+            elif key == ord('q') or key == ord('Q'):
                 break
             elif key == curses.KEY_UP:
-                self.effect_idx = (self.effect_idx - 1) % len(EFFECT_NAMES)
+                self.change_effect(-1)
             elif key == curses.KEY_DOWN:
-                self.effect_idx = (self.effect_idx + 1) % len(EFFECT_NAMES)
+                self.change_effect(1)
             elif key == ord('\t'):
                 self.pot_idx = (self.pot_idx + 1) % 4
             elif key == curses.KEY_LEFT:
-                self.pots[self.pot_idx] = max(0.0, self.pots[self.pot_idx] - 0.05)
+                old = self.pots[self.pot_idx]
+                self.pots[self.pot_idx] = max(0, old - 5)
+                if self.pots[self.pot_idx] != old:
+                    self.send_pot(self.pot_idx, self.pots[self.pot_idx])
             elif key == curses.KEY_RIGHT:
-                self.pots[self.pot_idx] = min(1.0, self.pots[self.pot_idx] + 0.05)
-            elif key == ord('p') or key == ord('P'):
-                self.process_and_play()
+                old = self.pots[self.pot_idx]
+                self.pots[self.pot_idx] = min(99, old + 5)
+                if self.pots[self.pot_idx] != old:
+                    self.send_pot(self.pot_idx, self.pots[self.pot_idx])
+            elif key == ord(' '):
+                if self.playing:
+                    self.stop_playback()
+                else:
+                    self.start_playback()
             elif key == ord('r') or key == ord('R'):
                 self.reset_pots()
+        
+        self.stop_playback()
 
 
 def main():
-    print("AudioNoise TUI - press 'q' to quit")
+    signal.signal(signal.SIGINT, lambda s, f: sys.exit(0))
     try:
         curses.wrapper(lambda stdscr: AudioNoiseTUI(stdscr).run())
     except KeyboardInterrupt:
         pass
-    print("Goodbye!")
 
 
 if __name__ == '__main__':
