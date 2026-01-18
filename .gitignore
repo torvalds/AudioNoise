@@ -1,7 +1,11 @@
 *.mp3
 *.raw
 *.o
+*.so
 convert
 gensin
 gensin.h
 __pycache__/
+__marimo__/
+*.egg-info/
+*.lock
