@@ -548,7 +548,7 @@ class AudioNoisePedal(Gtk.Window):
         shortcuts1 = Gtk.Label()
         shortcuts1.set_markup(
             '<span font="8" foreground="#777777">'
-            'Tab: knob  ←→: ±5  ↑↓: ±1  Space: play  R: reset  1-9: effect'
+            'Tab: knob  ←→: ±5  ↑↓: ±1  Space: play/stop  R: reset  1-9: effect'
             '</span>'
         )
         main_box.pack_start(shortcuts1, False, False, 4)
