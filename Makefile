@@ -53,7 +53,11 @@ input.raw: BassForLinus.mp3
 	ffmpeg -y -v fatal -i $< -f s32le -ar 48000 -ac 1 $@
 
 SeymourDuncan: convert
-	for i in ~/Wav/Seymour\ Duncan/*; do ffmpeg -y -v fatal -i "$$i" -f s32le -ar 48000 -ac 1 pipe:1 | ./convert phaser $(phaser_defaults) | $(PLAY) ; done
+	@if [ ! -d ~/Wav/Seymour\ Duncan ]; then echo "Directory ~/Wav/Seymour Duncan not found"; exit 0; fi
+	for i in ~/Wav/Seymour\ Duncan/*; do \
+		[ -f "$$i" ] || continue; \
+		ffmpeg -y -v fatal -i "$$i" -f s32le -ar 48000 -ac 1 pipe:1 | ./convert phaser $(phaser_defaults) | $(PLAY) ; \
+	done
 
 gensin.h: gensin
 	./gensin > gensin.h
