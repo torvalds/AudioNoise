@@ -89,15 +89,16 @@ static void *modify_pots(void *arg)
 		if (n <= 0)
 			return NULL;
 		switch (buf[0]) {
-		case 'p':
-			unsigned int idx = buf[1]-'0';
-			unsigned int d1 = buf[2]-'0';
-			unsigned int d2 = buf[3]-'0';
-			if (idx > 3 || d1 > 9 || d2 > 9)
+		case 'p': {
+				unsigned int idx = buf[1]-'0';
+				unsigned int d1 = buf[2]-'0';
+				unsigned int d2 = buf[3]-'0';
+				if (idx > 3 || d1 > 9 || d2 > 9)
+					break;
+				pots[idx] = (d1*10+d2) / 100.0;
+				eff->describe(pots);
 				break;
-			pots[idx] = (d1*10+d2) / 100.0;
-			eff->describe(pots);
-			break;
+			}
 		}
 	}
 }
