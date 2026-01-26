@@ -1,0 +1,25 @@
+[project]
+name = "audionoise"
+version = "0.1.0"
+description = "Interactive guitar pedal effects processor"
+authors = [{name = "Linus Torvalds"}]
+license = {text = "GPL-2.0"}
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24.0",
+    "matplotlib>=3.7.0",
+]
+
+[project.scripts]
+audionoise-visualize = "visualize:main"
+
+[tool.setuptools]
+py-modules = ["visualize"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = []
+
+[build-system]
+requires = ["setuptools>=61.0", "cffi>=1.15.0"]
+build-backend = "setuptools.build_meta"
