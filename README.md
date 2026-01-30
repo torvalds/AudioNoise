@@ -42,7 +42,7 @@ the middle-man -- me -- and just used Google Antigravity to do the audio
 sample visualizer.
 
 
-Before running the **_visualizer.py_** run
+Before running the **_visualize.py_** run
 ```bash
 pip intall -r requirements.txt
 ```
