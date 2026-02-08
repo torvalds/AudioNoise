@@ -5,7 +5,7 @@ LDLIBS = -lm
 PYTHON = python3
 PLAY = ffplay -v fatal -nodisp -autoexit -f s32le -ar 48000 -ch_layout mono -i pipe:0
 
-effects = flanger echo fm phaser discont am distortion tube growlingbass
+effects = flanger echo fm phaser discont am distortion tube growlingbass chorus tremolo
 flanger_defaults = 0.6 0.6 0.6 0.6
 echo_defaults = 0.3 0.3 0.3 0.3
 fm_defaults = 0.25 0.25 0.5 0.5
@@ -15,8 +15,10 @@ discont_defaults = 0.8 0.1 0.2 0.2
 distortion_defaults = 0.5 0.6 0.8 0.0
 tube_defaults = 0.5 0.2 0.0 1.0
 growlingbass_defaults = 0.4 0.35 0.0 0.4
+chorus_defaults = 0.3 0.4 0.5 0.7
+tremolo_defaults = 0.5 0.7 0.0 0.0
 
-HEADERS = am.h biquad.h discont.h distortion.h echo.h effect.h flanger.h growlingbass.h  fm.h  gensin.h lfo.h  phaser.h  util.h process.h tube.h
+HEADERS = am.h biquad.h chorus.h discont.h distortion.h echo.h effect.h flanger.h growlingbass.h  fm.h  gensin.h lfo.h  phaser.h  tremolo.h util.h process.h tube.h
 
 default:
 	@echo "Pick one of" $(effects)
