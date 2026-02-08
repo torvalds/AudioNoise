@@ -26,6 +26,8 @@
 #include "distortion.h"
 #include "tube.h"
 #include "growlingbass.h"
+#include "coupled_lfo.h"
+#include "entrained.h"
 
 static void magnitude_describe(float pot[4]) { fprintf(stderr, "\n"); }
 static void magnitude_init(float pot[4]) {}
@@ -45,6 +47,7 @@ struct effect {
 	EFF(phaser),
 	EFF(tube),
 	EFF(growlingbass),
+	EFF(entrained),
 
 	/* "Helper" effects */
 	EFF(am),
