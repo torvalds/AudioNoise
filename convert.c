@@ -126,6 +126,8 @@ int main(int argc, char **argv)
 		float val = strtof(arg, &endptr);
 		if (endptr != arg) {
 			if (potnr < 4) {
+				if (!isfinite(val))
+					val = 0.5;
 				pots[potnr++] = val;
 				continue;
 			}
@@ -184,6 +186,11 @@ int main(int argc, char **argv)
 
 	if (output < 0)
 		output = 1;
+
+	if (!eff) {
+		fprintf(stderr, "No effect specified\n");
+		exit(1);
+	}
 
 #ifdef F_SETPIPE_SZ
 	// Limit the output buffer size if we are
