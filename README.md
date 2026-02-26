@@ -66,6 +66,11 @@ Or install Python dependencies via:
 pip install -r requirements.txt
 ```
 
+Or using [uv](https://docs.astral.sh/uv/):
+```bash
+uv sync
+```
+
 ### Build
 
 Compile the audio processor:
