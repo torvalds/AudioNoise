@@ -3,7 +3,7 @@ CFLAGS = -Wall -O2
 LDLIBS = -lm
 
 PYTHON = python3
-PLAY = ffplay -v fatal -nodisp -autoexit -f s32le -ar 48000 -ch_layout mono -i pipe:0
+PLAY = ffplay -v fatal -nodisp -autoexit -f s32le -ar 48000 -ch_layout mono
 
 effects = flanger echo fm phaser discont am distortion tube growlingbass
 flanger_defaults = 0.6 0.6 0.6 0.6
@@ -22,7 +22,7 @@ default:
 	@echo "Pick one of" $(effects)
 
 play: output.raw
-	$(PLAY) < output.raw
+	$(PLAY) $<
 
 visualize: input.raw output.raw magnitude.raw outmagnitude.raw
 	$(PYTHON) visualize.py input.raw output.raw magnitude.raw outmagnitude.raw
@@ -33,7 +33,7 @@ visualize: input.raw output.raw magnitude.raw outmagnitude.raw
 $(effects): input.raw convert
 	./convert $@ $($@_defaults) input.raw output.raw
 	ffmpeg -y -v fatal -f s32le -ar 48000 -ac 1 -i output.raw -f mp3 $@.mp3
-	$(PLAY) < output.raw
+	$(PLAY) output.raw
 
 convert.o: CFLAGS += -ffast-math -fsingle-precision-constant -Wfloat-conversion # -Wdouble-promotion
 convert.o: $(HEADERS)
@@ -53,7 +53,11 @@ input.raw: BassForLinus.mp3
 	ffmpeg -y -v fatal -i $< -f s32le -ar 48000 -ac 1 $@
 
 SeymourDuncan: convert
-	for i in ~/Wav/Seymour\ Duncan/*; do ffmpeg -y -v fatal -i "$$i" -f s32le -ar 48000 -ac 1 pipe:1 | ./convert phaser $(phaser_defaults) | $(PLAY) ; done
+	@if [ ! -d ~/Wav/Seymour\ Duncan ]; then echo "Directory ~/Wav/Seymour Duncan not found"; exit 0; fi
+	for i in ~/Wav/Seymour\ Duncan/*; do \
+		[ -f "$$i" ] || continue; \
+		ffmpeg -y -v fatal -i "$$i" -f s32le -ar 48000 -ac 1 pipe:1 | ./convert phaser $(phaser_defaults) | $(PLAY) -i pipe:0 ; \
+	done
 
 gensin.h: gensin
 	./gensin > gensin.h

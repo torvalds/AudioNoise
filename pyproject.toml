@@ -1,0 +1,10 @@
+[project]
+name = "audionoisefork"
+version = "0.1.0"
+description = "A Python toolkit to visualize noise characteristics in audio signals"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "matplotlib>=3.10.8",
+    "numpy>=2.4.1",
+]
