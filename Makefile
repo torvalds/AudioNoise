@@ -41,6 +41,9 @@ convert.o: $(HEADERS)
 
 convert: convert.o
 
+libeffects.so: convert.c $(HEADERS)
+	$(CC) $(CFLAGS) -fPIC -shared -o libeffects.so convert.c $(LDFLAGS)
+
 output.raw: input.raw convert
 	./convert echo $(echo_defaults) input.raw output.raw
 
