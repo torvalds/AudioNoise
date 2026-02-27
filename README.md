@@ -40,3 +40,10 @@ much -- than I do about python.  It started out as my typical "google
 and do the monkey-see-monkey-do" kind of programming, but then I cut out
 the middle-man -- me -- and just used Google Antigravity to do the audio
 sample visualizer.
+
+
+Before running the **_visualize.py_** run
+```bash
+pip intall -r requirements.txt
+```
+...To install all of the dependancies.
