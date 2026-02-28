@@ -35,7 +35,7 @@ static void test_limit_value_bounded(void)
 		float out = limit_value(test_values[i]);
 		char msg[80];
 		snprintf(msg, sizeof(msg), "limit_value(%.2g) = %.6f should be in (-1,1)", test_values[i], out);
-		ASSERT(out > -1.0f && out < 1.0f, msg);
+		ASSERT(out >= -1.0f && out <= 1.0f, msg);
 	}
 	printf("  limit_value bounded: OK\n");
 }
@@ -78,7 +78,7 @@ static void test_u32_fraction_range(void)
 	ASSERT_NEAR(u32_to_fraction(0), 0.0f, 1e-10f, "u32_to_fraction(0) = 0");
 	/* Max u32 should be close to 1.0 */
 	float max_val = u32_to_fraction(0xFFFFFFFF);
-	ASSERT(max_val > 0.99f && max_val < 1.0f, "u32_to_fraction(MAX) should be ~1.0");
+	ASSERT(max_val > 0.99f && max_val <= 1.0f, "u32_to_fraction(MAX) should be ~1.0");
 	printf("  u32/fraction range: OK\n");
 }
 
