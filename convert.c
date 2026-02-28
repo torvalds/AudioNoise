@@ -27,6 +27,8 @@
 #include "tube.h"
 #include "growlingbass.h"
 #include "pll.h"
+#include "formant.h"
+#include "braid.h"
 
 static void magnitude_describe(float pot[4]) { fprintf(stderr, "\n"); }
 static void magnitude_init(float pot[4]) {}
@@ -47,6 +49,8 @@ struct effect {
 	EFF(tube),
 	EFF(growlingbass),
 	EFF(pll),
+	EFF(formant),
+	EFF(braid),
 
 	/* "Helper" effects */
 	EFF(am),
