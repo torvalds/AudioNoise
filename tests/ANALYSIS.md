@@ -1,0 +1,173 @@
+# AudioNoise Quality Analysis
+
+**Date:** 2026-02-27
+**Codebase:** Linus Torvalds' AudioNoise — digital guitar pedal DSP effects
+**Scope:** Architecture, code quality, potential bugs, DSP correctness, security/robustness
+
+## Executive Summary
+
+This is a well-crafted personal project for learning and experimenting with DSP effects. The code is clear, concise, and idiomatic C. The header-only architecture is pragmatic for a single-translation-unit project. The findings below are offered in the spirit of thorough engineering review — most are minor or intentional trade-offs for a "toy effects" project.
+
+**Severity Legend:** 🔴 Bug/Risk | 🟡 Design concern | 🟢 Minor/Style
+
+---
+
+## 1. Architecture Review
+
+### Header-Only Pattern
+The entire codebase compiles as a single translation unit (`convert.c` includes all `.h` files). This is a valid and deliberate choice:
+
+**Pros:**
+- Maximum inlining opportunity — the compiler sees everything
+- Zero linking complexity
+- Simple build: one `.c` file → one binary
+- Easy to reason about for a small project
+
+**Cons:**
+- 🟡 **Global state pollution:** Every effect's static variables live in the same scope. `growlingbass_step`'s static locals, `phaser`'s global struct, `distortion`'s global struct — they all coexist and persist across effect switches.
+- 🟡 **No multi-effect chaining:** You cannot run two instances of the same effect (e.g., two flangers in series) because they share state.
+- 🟡 **No encapsulation:** Any effect can accidentally read another effect's globals. This works because the author is disciplined, but it's fragile for contributions.
+
+### Shared Effect State (`effect.h`)
+The `effect.h` file provides shared globals (`sample_array`, `effect_lfo`, `effect_feedback`, `effect_delay`, `effect_depth`) that most effects use. This is elegant for the common case but means:
+- Effects that use the shared LFO (flanger, echo) can't be chained with other LFO-using effects
+- The `sample_array` is shared — flanger and echo both write to it, so they'd interfere if chained
+
+### Init Called Every Block
+🟡 `convert.c` calls `eff->init(pots)` every iteration of the main loop (every `BLOCKSIZE=200` samples ≈ 4.2ms at 48kHz). This is for live pot control responsiveness, but it's architecturally confusing — `init` suggests one-time setup. The init functions are really "parameter update" functions. This works because they only set parameters, not reset cumulative state (LFO phase, biquad history, sample array contents).
+
+### Thread Safety
+🔴 **Data race on `pots[]` array:** The `modify_pots` thread writes to `pots[]` while the main thread reads it in the `for(;;)` loop. There's no mutex, atomic, or memory barrier. On x86 this is mostly benign (aligned float writes are atomic), but it's technically undefined behavior per the C standard and could cause torn reads on other architectures.
+
+---
+
+## 2. Code Quality Issues
+
+### 🔴 `tube_describe()` has file I/O side effects
+`tube_describe()` opens and reads `FIR.raw` on first call. This means simply listing effect help (the `fprintf` at startup: `eff->describe(pots)`) triggers file I/O. If `FIR.raw` is missing, the program exits with an error even if you're not using the tube effect. The FIR loading should be in `tube_init()` or a separate `tube_load()`.
+
+### 🟡 `process.h` shared noise gate state
+The static variables `magnitude`, `max`, `min`, `noise_gate` in `process.h` persist across effect switches. If you ran a loud effect then switched to a quiet one, the noise gate state from the previous effect carries over. For a single-effect-per-run tool this doesn't matter, but it's worth noting.
+
+### 🟡 `echo_init` skips `pot[1]`
+The echo effect maps pot[0] → delay, pot[2] → LFO, pot[3] → feedback. pot[1] is unused. The `echo_describe` output also skips it. This is a gap in the pot mapping — either intentional (reserved for future use) or an oversight.
+
+### 🟡 Inconsistent function linkage
+- Most effects use `static inline` for all functions (flanger, echo, fm, am, distortion, tube, growlingbass, pll)
+- `phaser.h` uses plain (non-static, non-inline) functions: `phaser_describe`, `phaser_init`, `phaser_step`
+- `discont.h` also uses plain functions: `discont_describe`, `discont_init`, `discont_step`
+
+This inconsistency doesn't cause bugs (single TU), but makes the codebase feel unfinished.
+
+### 🟡 Duplicated `hard_clip`
+`distortion.h` defines `hard_clip(float x)` with threshold ±1.0, and `growlingbass.h` defines `hard_clip_growlingbass(float x, float ceil)` with threshold ±0.05 and a `ceil` parameter. These serve different purposes (amplitude limiting vs. square wave generation), but the naming suggests they should share code.
+
+### 🟢 LFO `quarter_sin[idx+1]` access
+In `lfo.h`, the sinewave lookup accesses `quarter_sin[idx+1]` where `idx` can be up to `QUARTER_SINE_STEPS - 1` (255). The table has `STEPS+2` entries (258 total: indices 0..257), generated by `gensin.c` which outputs `STEPS+1` entries in the loop plus one extra `1.0` sentinel. So `quarter_sin[256]` is valid. This is **safe but non-obvious** — a comment would help.
+
+### 🟢 `sample_array_read` mutates `idx`
+The `++idx` in `sample_array_read` modifies the local variable in-place to get `idx+1` for the second sample. This is correct but subtle — `idx - 1` would be clearer for the second read without mutation.
+
+### 🟡 `pll.h` — Author-acknowledged issues
+The comment "Yes, this is sine, not quadrature sine (aka cos)" and "I'm not convinced the pll part even works" are refreshingly honest. The PLL multiplies input by sine of the tracking oscillator, which gives frequency error detection rather than proper phase error detection (which requires cosine/quadrature). The zero-crossing detector likely does most of the actual frequency tracking.
+
+---
+
+## 3. Potential Bugs
+
+### 🔴 `growlingbass_step` static locals never reset
+```c
+static unsigned nperiods = 0;
+static float previous_sign = -1.0f;
+static float previous_minmax = 0.0f;
+static float minmax = 0.0f;
+```
+These persist forever. If the effect is restarted or if audio stops and restarts, `nperiods` continues counting from where it left off, `previous_minmax` retains old amplitude info. For a single-run tool this is fine, but it could cause artifacts if the tool were extended to switch effects at runtime.
+
+### 🟡 `process_output` overflow handling
+The overflow check:
+```c
+if (out >= 0) {
+    if (sample < 0) sample = 0x7fffffff;
+} else {
+    if (sample > 0) sample = 0x80000000;
+}
+```
+The value `0x80000000` as a signed `int` is `INT_MIN` (-2147483648). Assigning this literal to an `s32` is implementation-defined behavior in C (it exceeds `INT_MAX`). In practice, on two's complement systems (all modern hardware), this works correctly. The value `0x7fffffff` is `INT_MAX` and is fine.
+
+### 🟡 `fm_step` and `am_step` ignore input
+Both effects generate their own signal and ignore the `in` parameter. This is documented ("It doesn't actually care about the input") but could surprise users. They're signal generators, not effects.
+
+### 🟢 `tube_describe` doesn't validate FIR.raw
+The file is read with `read(fd, tube.FIR, sizeof(tube.FIR))` but the actual number of bytes read (`n`) is only used to determine how many entries to convert. A short read, corrupt file, or wrong-endian file would silently produce garbage coefficients.
+
+---
+
+## 4. Security & Robustness
+
+### 🔴 `modify_pots` input parsing — no bounds check
+```c
+unsigned int idx = buf[1]-'0';
+```
+If `buf[1]` is a character less than `'0'` (e.g., space, newline, null), this wraps around to a large unsigned value. The subsequent `if (idx > 3)` check catches this, but only because unsigned underflow produces a value > 3. If the intent were signed, this would be a bug.
+
+### 🟡 `--control=` fd not validated
+`pot_control = strtol(arg+10, &endptr, 0)` doesn't check for overflow or negative values. A negative fd or huge number would be passed to `read()` which would return -1 (EBADF), causing the thread to exit. Not exploitable, but not clean.
+
+### 🟡 `write()` return value unchecked
+In `make_one_noise`, `write(out, output, nr * 4)` doesn't check the return value. A short write (possible with pipes) would silently drop audio data.
+
+### 🟢 File descriptors from command-line args
+The `open()` calls check for failure, which is correct. No path traversal concerns since this is a command-line tool processing user-specified files.
+
+---
+
+## 5. DSP Correctness
+
+### Biquad Filter Coefficients
+The biquad implementations match the **Audio EQ Cookbook** (Robert Bristow-Johnson) formulas correctly:
+- LPF: ✅ `b0 = b2 = (1-cos)/2`, `b1 = 1-cos`, normalized by `1+alpha`
+- HPF: ✅ `b0 = b2 = (1+cos)/2`, `b1 = -(1+cos)`, normalized by `1+alpha`
+- BPF: ✅ Both constant-skirt and constant-peak variants present
+- Notch: ✅ `b0 = b2 = 1`, `b1 = -2cos`, normalized by `1+alpha`
+- Allpass: ✅ `b0 = (1-alpha)/(1+alpha)`, `b1 = -2cos/(1+alpha)`, `b2 = 1`
+
+The use of `fastsincos` instead of `sin`/`cos` introduces minor coefficient error (≈5.3 digits precision), which is negligible for audio.
+
+### Noise Gate (process.h)
+🟡 The noise gate uses a **multiplicative approach**: `noise_gate` starts very small (~3×10⁻¹²) and grows multiplicatively by 1.001 per sample when signal is present. This means:
+- First samples are nearly silent: it takes ~7000 samples (~146ms) to reach full gate open
+- After silence, the gate re-opens slowly (gradual fade-in)
+- This is unusual vs. traditional gates (threshold + attack/release envelope) but produces a smooth, artifact-free result
+
+### PLL Phase Detection
+🟡 As the author notes, the phase error is computed as `input × sin(tracking)` rather than `input × cos(tracking)`. A proper PLL uses quadrature (cosine) for phase error detection. The current approach gives something closer to frequency error. However, the zero-crossing detector provides the primary frequency tracking, so the PLL phase correction is supplementary.
+
+### Fast Sin/Cos Precision
+The quarter-sine table with 256 entries and linear interpolation provides ~5.3 digits of precision. For audio DSP at 48kHz, this is more than adequate — 16-bit audio only needs ~4.8 digits.
+
+---
+
+## 6. Positive Observations
+
+- **Clean, readable code.** The codebase is remarkably well-organized for a personal project.
+- **Good use of comments.** The tube.h header is a masterclass in honest documentation ("Do I look like I know what I'm doing?").
+- **Correct DSP fundamentals.** Biquad cookbook implementation is accurate. LFO design is solid.
+- **Pragmatic engineering.** The `limit_value(x) = x/(1+|x|)` soft clipper is simple, efficient, and well-chosen.
+- **Existing tests.** The sincos and LFO tests show attention to numerical correctness.
+- **The `gensin.c` sentinel entry** (extra value at end of quarter_sin table) shows careful thought about boundary conditions.
+
+---
+
+## 7. Recommendations (Priority Order)
+
+1. **Move FIR loading out of `tube_describe`** — load in `tube_init` or lazily on first `tube_step` call
+2. **Add `_Atomic` or mutex for `pots[]`** — trivial fix for a real data race
+3. **Rename `init` to `update_params`** — clarifies the intent of per-block parameter updates
+4. **Make phaser/discont functions `static inline`** — consistency
+5. **Add `volatile` or comment to `growlingbass_step` statics** — document persistence intent
+6. **Check `write()` return value** — handle short writes in `make_one_noise`
+
+---
+
+*Analysis performed against the AudioNoise repository as of 2026-02-27.*

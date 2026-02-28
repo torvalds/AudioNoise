@@ -61,7 +61,7 @@ gensin.h: gensin
 
 gensin: gensin.c
 
-test: test-sincos test-lfo
+test: test-sincos test-lfo test-biquad test-util test-process test-lfo-modes test-effects
 
 tests/lfo: tests/lfo.o
 tests/lfo.o: $(HEADERS)
@@ -73,4 +73,29 @@ tests/sincos.o: $(HEADERS)
 test-sincos: tests/sincos
 	tests/sincos
 
-.PHONY: default play $(effects) SeymourDuncan visualize test-lfo test-sincos
+tests/test_biquad: tests/test_biquad.o
+tests/test_biquad.o: $(HEADERS)
+test-biquad: tests/test_biquad
+	tests/test_biquad
+
+tests/test_util: tests/test_util.o
+tests/test_util.o: $(HEADERS)
+test-util: tests/test_util
+	tests/test_util
+
+tests/test_process: tests/test_process.o
+tests/test_process.o: $(HEADERS)
+test-process: tests/test_process
+	tests/test_process
+
+tests/test_lfo_modes: tests/test_lfo_modes.o
+tests/test_lfo_modes.o: $(HEADERS)
+test-lfo-modes: tests/test_lfo_modes
+	tests/test_lfo_modes
+
+tests/test_effects: tests/test_effects.o
+tests/test_effects.o: $(HEADERS)
+test-effects: tests/test_effects
+	tests/test_effects
+
+.PHONY: default play $(effects) SeymourDuncan visualize test-lfo test-sincos test-biquad test-util test-process test-lfo-modes test-effects
