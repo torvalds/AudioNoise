@@ -20,7 +20,8 @@ pll_defaults = 0.25 0.5 0.5 0.5
 HEADERS = am.h biquad.h discont.h distortion.h echo.h effect.h flanger.h growlingbass.h  fm.h  gensin.h lfo.h  phaser.h  util.h process.h tube.h pll.h
 
 default:
-	@echo "Pick one of" $(effects)
+	@echo "Usage: make <effect>"
+	@echo "Effects:" $(effects)
 
 play: output.raw
 	$(PLAY) < output.raw
