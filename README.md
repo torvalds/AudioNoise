@@ -3,7 +3,7 @@
 The digital [RP2354 and TAC5112-based guitar
 pedal](https://github.com/torvalds/GuitarPedal) actually does work, even
 if I'm not thrilled about some of my analog interface choices (ie the
-pots in particular, and I'm growing to hate the clicky footswitch even
+potentiometers in particular, and I'm growing to hate the clicky footswitch even
 if I do love how it also doubles as a boot selector switch for
 programming). 
 
