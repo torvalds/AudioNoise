@@ -63,7 +63,7 @@ static void *modify_pots(void *arg)
 		if (n <= 0)
 			return NULL;
 		switch (buf[0]) {
-		case 'p':
+		case 'p': {
 			unsigned int idx = buf[1]-'0';
 			unsigned int d1 = buf[2]-'0';
 			unsigned int d2 = buf[3]-'0';
@@ -72,6 +72,7 @@ static void *modify_pots(void *arg)
 			pots[idx] = 2*(d1*10+d2) - 100;
 			describe(eff, pots);
 			break;
+			}
 		}
 	}
 }
