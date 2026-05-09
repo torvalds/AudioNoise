@@ -40,3 +40,44 @@ much -- than I do about python.  It started out as my typical "google
 and do the monkey-see-monkey-do" kind of programming, but then I cut out
 the middle-man -- me -- and just used Google Antigravity to do the audio
 sample visualizer.
+
+---
+
+## Developer Setup
+
+This section is intended for developers who want to build, run, or
+experiment with the digital effects locally.
+
+### Prerequisites
+
+Install basic build tools and audio utilities:
+
+```bash
+sudo apt-get install build-essential ffmpeg
+```
+
+Optional: Python dependencies for visualization tools.
+```bash
+uv sync
+```
+
+Or using pip:
+```bash
+pip3 install numpy matplotlib
+```
+
+### Building and running effects
+
+Each effect can be built and run independently via make. The build
+system handles compilation and execution automatically.
+
+```bash
+make flanger
+make echo
+make phaser
+make fm
+make discont
+```
+
+These targets generate and process audio samples using the corresponding
+effect implementation.
