@@ -6,12 +6,63 @@ from matplotlib.widgets import RangeSlider, RectangleSelector, RadioButtons
 
 import os
 import argparse
+from dataclasses import dataclass
+from collections.abc import Callable
 
 # --- Constants ---
 INITIAL_WINDOW_SEC = 3600.0
 BYTES_PER_SAMPLE = 4
 # MAX_WIDTH_SEC removed, utilizing self.max_samples instead
 MAX_PLOT_POINTS = 5000   # Maximum points to plot per line
+
+
+@dataclass
+class ValidationResult:
+    valid: bool
+    reason: str | None = None
+
+@dataclass
+class ContainerFormat:
+    detected_type: str
+    detector: Callable[[bytes], bool]
+    reason: str
+    suggested_action: str = "Convert to raw int32 PCM first (e.g. with ffmpeg)"
+
+def _validate_input_file(filename):
+    with open(filename, "rb") as fp:
+        header = fp.read(16)
+
+    container_formats = [
+        ContainerFormat(
+            detected_type="MP3",
+            detector=lambda h: h.startswith(b"ID3"),
+            reason="MP3 is a compressed container format, not raw PCM",
+        ),
+        ContainerFormat(
+            detected_type="FLAC",
+            detector=lambda h: h.startswith(b"fLaC"),
+            reason="FLAC is a compressed container format, not raw PCM",
+        ),
+        ContainerFormat(
+            detected_type="OGG",
+            detector=lambda h: h.startswith(b"OggS"),
+            reason="OGG is a container format, not raw PCM",
+        ),
+        ContainerFormat(
+            detected_type="WAV",
+            detector=lambda h: h.startswith(b"RIFF") and h[8:12] == b"WAVE",
+            reason="WAV files are not supported; use raw int32 PCM",
+        ),
+    ]
+
+    for fmt in container_formats:
+        if fmt.detector(header):
+            return ValidationResult(
+                valid=False,
+                reason=fmt.reason,
+            )
+
+    return ValidationResult(valid=True)
 
 class WaveformVisualizer:
     def __init__(self, filenames, rate, min_zoom_samples=100):
@@ -29,6 +80,12 @@ class WaveformVisualizer:
 
         # Load files
         for f in filenames:
+            validation = _validate_input_file(f)
+
+            if not validation.valid:
+                print(f"{f}: {validation.reason}")
+                continue
+
             try:
                 fsize = os.path.getsize(f)
                 samples = fsize // BYTES_PER_SAMPLE
