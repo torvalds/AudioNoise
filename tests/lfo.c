@@ -29,13 +29,14 @@ static u32 gcd32(u32 a, u32 b) {
 static void format_comma(u64 value, char *buffer, size_t len) {
     char temp[32] = {0};
     int count = 0;
-        do {
+    do {
         temp[count++] = '0' + (value % 10);
         value /= 10;
     } while (value > 0 && count < 20);
     
     if (value > 0) strcat(temp, " "); // For values > 2^32
-        // Add commas every 3 digits    char *dest = buffer;
+    // Add commas every 3 digits
+    char *dest = buffer;
     for (int i = count - 1; i >= 0; i--) {
         *dest++ = temp[i];
         if (i > 0 && (i % 3) == 0) {
@@ -89,7 +90,8 @@ int main(int argc, char **argv) {
     u32 maxidx = 0;
     time_t start_time = time(NULL);
 
-    // Progress monitoring variables    u64 progress_update = period ? period / 100 : 1;
+    // Progress monitoring variables
+    u64 progress_update = period ? period / 100 : 1;
     double start_sample_rate = 0.0;
 
     // Main testing loop
@@ -97,8 +99,7 @@ int main(int argc, char **argv) {
         u32 idx = lfo.idx;
         float val = lfo_step(&lfo, lfo_sinewave);
         
-        // Convert index to radians (using float for speed)
-        float s = (idx * (2.0f / (float)MAX_ITER) * M_PI;
+        float s = idx * (2.0f / (float)MAX_ITER) * M_PI;
         float exact = sinf(s);
         float err = fabsf(val - exact);
         
@@ -120,7 +121,8 @@ int main(int argc, char **argv) {
                        step, num_buffer);
             }
             
-            printf("\r  %3.0f%% complete | Error: %.8f | Samples/sec: %.1f",                    100.0 * i / period, maxerr, sample_rate);
+            printf("\r  %3.0f%% complete | Error: %.8f | Samples/sec: %.1f",
+                   100.0 * i / period, maxerr, sample_rate);
             fflush(stdout);
             
             start_sample_rate = sample_rate;
@@ -131,7 +133,7 @@ int main(int argc, char **argv) {
     // Final results
     time_t end_time = time(NULL);
     double total_time = (double)(end_time - start_time);
-        printf("\n\nFinal Results:\n");
+    printf("\n\nFinal Results:\n");
     printf("  • Total time: %.2f seconds (%.2f samples/sec)\n", 
            total_time, period / total_time);
     printf("  • Max error: %.8f\n", maxerr);
@@ -140,7 +142,7 @@ int main(int argc, char **argv) {
     // Convert index to readable range
     double phase = (maxidx * (360.0 / (float)MAX_ITER));
     printf("  • Phase at max error: %.2f°\n", phase);
-        if (total_time > 1) {
+    if (total_time > 1) {
         printf("  • Note: Full 2^32 test took %g seconds\n", total_time);
         printf("    For faster testing, try: %s --max 100000000\n", argv[0]);
     }
