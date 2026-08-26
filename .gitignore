@@ -1,3 +1,4 @@
+--- .gitignore
 # Compiled and build artifacts
 *.o
 *.obj
@@ -69,3 +70,28 @@ htmlcov/
 *.tar.bz2
 *.tar.xz
 *.tar.zst
+
++++ .gitignore (修改后)
+```
+# Compiled files
+*.o
+*.obj
+*.out
+
+# Dependencies
+__pycache__/
+*.pyc
+
+# Logs and temp files
+*.log
+*.tmp
+
+# Editors
+.vscode/
+.idea/
+
+# Environment
+.env
+.env.local
+*.env.*
+```

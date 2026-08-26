@@ -1,23 +1,25 @@
 CC = gcc
-CFLAGS = -Wall -O2
+CFLAGS = -Wall -O2 -Iaudio -Ibuild -I.
 LDLIBS = -lm
 
 PYTHON = python3
 PLAY = ffplay -v fatal -nodisp -autoexit -f s32le -ar 48000 -ch_layout mono -i pipe:0
 
-effects = flanger echo fm phaser discont am distortion tube growlingbass pll
+effects = boost eq flanger phaser echo pitch compressor
+boost_defaults =
+eq_defaults =
+phaser_defaults = 0.3 0.3 0.5 0.5
 flanger_defaults = 0.6 0.6 0.6 0.6
 echo_defaults = 0.3 0.3 0.3 0.3
-fm_defaults = 0.25 0.25 0.5 0.5
-am_defaults = 0.25 0.25 0.5 0.5
-phaser_defaults = 0.3 0.3 0.5 0.5
-discont_defaults = 0.8 0.1 0.2 0.2
-distortion_defaults = 0.5 0.6 0.8 0.0
-tube_defaults = 0.5 0.2 0.0 1.0
-growlingbass_defaults = 0.4 0.35 0.0 0.4
-pll_defaults = 0.25 0.5 0.5 0.5
+pitch_defaults = 0.8 0.8
+compressor_defaults =
 
-HEADERS = am.h biquad.h discont.h distortion.h echo.h effect.h flanger.h growlingbass.h  fm.h  gensin.h lfo.h  phaser.h  util.h process.h tube.h pll.h
+GEN_HEADERS = build/log2.h build/pow2.h build/quarter_sine.h build/eq-w0.h
+
+HEADERS = $(GEN_HEADERS) audio/lfo.h audio/util.h \
+          audio/biquad.h audio/effect.h audio/process.h \
+          audio/boost.h audio/eq.h audio/phaser.h audio/flanger.h \
+          audio/echo.h audio/pitch.h
 
 default:
 	@echo "Pick one of" $(effects)
@@ -25,8 +27,8 @@ default:
 play: output.raw
 	$(PLAY) < output.raw
 
-visualize: input.raw output.raw magnitude.raw outmagnitude.raw
-	$(PYTHON) visualize.py input.raw output.raw magnitude.raw outmagnitude.raw
+visualize: input.raw output.raw
+	$(PYTHON) visualize.py input.raw output.raw
 
 %.raw: %.mp3
 	ffmpeg -y -v fatal -i $< -f s32le -ar 48000 -ac 1 $@
@@ -56,10 +58,21 @@ input.raw: BassForLinus.mp3
 SeymourDuncan: convert
 	for i in ~/Wav/Seymour\ Duncan/*; do ffmpeg -y -v fatal -i "$$i" -f s32le -ar 48000 -ac 1 pipe:1 | ./convert phaser $(phaser_defaults) | $(PLAY) ; done
 
-gensin.h: gensin
-	./gensin > gensin.h
+build/log2.h: scripts/log2.py
+	mkdir -p build
+	$(PYTHON) scripts/log2.py build/log2.h 8
 
-gensin: gensin.c
+build/pow2.h: scripts/pow2.py
+	mkdir -p build
+	$(PYTHON) scripts/pow2.py build/pow2.h 8
+
+build/quarter_sine.h: scripts/quarter_sine.py
+	mkdir -p build
+	$(PYTHON) scripts/quarter_sine.py build/quarter_sine.h 8
+
+build/eq-w0.h: scripts/eq-w0.py
+	mkdir -p build
+	$(PYTHON) scripts/eq-w0.py build/eq-w0.h 8
 
 test: test-sincos test-lfo
 

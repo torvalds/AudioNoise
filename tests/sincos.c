@@ -4,7 +4,7 @@
 #define SAMPLES_PER_SEC 48000.0f
 
 typedef unsigned int uint;
-#include "../util.h"
+#include "../audio/util.h"
 
 int main(int argc, char **argv)
 {

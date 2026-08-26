@@ -7,54 +7,14 @@
 #include <pthread.h>
 #include <math.h>
 
+#include "sh1106.h"
+
 #define SAMPLES_PER_SEC (48000.0)
 
 // Core utility functions and helpers
 #include "util.h"
-#include "lfo.h"
-#include "effect.h"
 #include "biquad.h"
-#include "process.h"
-
-// Effects
-#include "flanger.h"
-#include "echo.h"
-#include "fm.h"
-#include "am.h"
-#include "phaser.h"
-#include "discont.h"
-#include "distortion.h"
-#include "tube.h"
-#include "growlingbass.h"
-#include "pll.h"
-
-static void magnitude_describe(float pot[4]) { fprintf(stderr, "\n"); }
-static void magnitude_init(float pot[4]) {}
-static float magnitude_step(float in) { return u32_to_fraction(magnitude); }
-
-#define EFF(x) { #x, x##_describe, x##_init, x##_step }
-struct effect {
-	const char *name;
-	void (*describe)(float[4]);
-	void (*init)(float[4]);
-	float (*step)(float);
-} effects[] = {
-	EFF(discont),
-	EFF(distortion),
-	EFF(echo),
-	EFF(flanger),
-	EFF(phaser),
-	EFF(tube),
-	EFF(growlingbass),
-	EFF(pll),
-
-	/* "Helper" effects */
-	EFF(am),
-	EFF(fm),
-	EFF(magnitude),
-};
-
-#define UPDATE(x) x += 0.001 * (target_##x - x)
+#include "effect.h"
 
 #define BLOCKSIZE 200
 static inline int make_one_noise(int in, int out, struct effect *eff)
@@ -66,20 +26,32 @@ static inline int make_one_noise(int in, int out, struct effect *eff)
 
 	nr /= 4;
 	for (int i = 0; i < nr; i++) {
-		UPDATE(effect_delay);
-
-		float val = process_input(input[i]);
+		u32 sample = input[i];
+		float val = process_input(sample);
 
 		val = eff->step(val);
 
-		output[i] = process_output(val);
+		output[i] = process_output(val, sample);
 	}
 	write(out, output, nr * 4);
 	return nr * 4;
 }
 
 static int pot_control = -1;
-static float pots[4] = { 0.5, 0.5, 0.5, 0.5 };
+static signed char pots[10];
+
+static void describe(struct effect *eff, signed char pots[10])
+{
+	printf("%s:\n", eff->name);
+	for (int i = 0; i < 10; i++) {
+		const struct pot_descr *desc = eff->pots+i;
+		if (!desc->label)
+			break;
+		printf("  %s: %f %s\n", desc->label,
+			desc->convert(pots[i]),
+			desc->describe(pots[i]));
+	}
+}
 
 static void *modify_pots(void *arg)
 {
@@ -97,8 +69,8 @@ static void *modify_pots(void *arg)
 			unsigned int d2 = buf[3]-'0';
 			if (idx > 3 || d1 > 9 || d2 > 9)
 				break;
-			pots[idx] = (d1*10+d2) / 100.0;
-			eff->describe(pots);
+			pots[idx] = 2*(d1*10+d2) - 100;
+			describe(eff, pots);
 			break;
 		}
 	}
@@ -126,8 +98,8 @@ int main(int argc, char **argv)
 		// The we assume it's a default pot value
 		float val = strtof(arg, &endptr);
 		if (endptr != arg) {
-			if (potnr < 4) {
-				pots[potnr++] = val;
+			if (potnr < 10) {
+				pots[potnr++] = (int) rintf(200*val)-100;
 				continue;
 			}
 			fprintf(stderr, "Too many pot values\n");
@@ -137,8 +109,8 @@ int main(int argc, char **argv)
 		// Is it the name of an effect and we don't have one yet?
 		if (!eff) {
 			for (int i = 0; i < ARRAY_SIZE(effects); i++) {
-				if (!strcmp(arg, effects[i].name))
-					eff = effects+i;
+				if (!strcasecmp(arg, effects[i]->name))
+					eff = effects[i];
 			}
 			if (eff)
 				continue;
@@ -194,8 +166,7 @@ int main(int argc, char **argv)
 	fcntl(output, F_SETPIPE_SZ, 4096);
 #endif
 
-	fprintf(stderr, "Playing %s: ",	eff->name);
-	eff->describe(pots);
+	describe(eff, pots);
 
 	pthread_t pot_thread;
 	if (pot_control >= 0)
