@@ -3,7 +3,8 @@ CFLAGS = -Wall -O2 -Iaudio -Ibuild -I.
 LDLIBS = -lm
 
 PYTHON = python3
-PLAY = ffplay -v fatal -nodisp -autoexit -f s32le -ar 48000 -ch_layout mono -i pipe:0
+SAMPLE_RATE = 48000
+PLAY = ffplay -v fatal -nodisp -autoexit -f s32le -ar $(SAMPLE_RATE) -ch_layout mono -i pipe:0
 
 effects = boost eq flanger phaser echo pitch compressor
 boost_defaults =
@@ -31,11 +32,11 @@ visualize: input.raw output.raw
 	$(PYTHON) visualize.py input.raw output.raw
 
 %.raw: %.mp3
-	ffmpeg -y -v fatal -i $< -f s32le -ar 48000 -ac 1 $@
+	ffmpeg -y -v fatal -i $< -f s32le -ar $(SAMPLE_RATE) -ac 1 $@
 
 $(effects): input.raw convert
 	./convert $@ $($@_defaults) input.raw output.raw
-	ffmpeg -y -v fatal -f s32le -ar 48000 -ac 1 -i output.raw -f mp3 $@.mp3
+	ffmpeg -y -v fatal -f s32le -ar $(SAMPLE_RATE) -ac 1 -i output.raw -f mp3 $@.mp3
 	$(PLAY) < output.raw
 
 convert.o: CFLAGS += -ffast-math -fsingle-precision-constant -Wfloat-conversion # -Wdouble-promotion
@@ -53,10 +54,10 @@ outmagnitude.raw: output.raw convert
 	./convert magnitude 0.1 0.0001 0 0 output.raw outmagnitude.raw
 
 input.raw: BassForLinus.mp3
-	ffmpeg -y -v fatal -i $< -f s32le -ar 48000 -ac 1 $@
+	ffmpeg -y -v fatal -i $< -f s32le -ar $(SAMPLE_RATE) -ac 1 $@
 
 SeymourDuncan: convert
-	for i in ~/Wav/Seymour\ Duncan/*; do ffmpeg -y -v fatal -i "$$i" -f s32le -ar 48000 -ac 1 pipe:1 | ./convert phaser $(phaser_defaults) | $(PLAY) ; done
+	for i in ~/Wav/Seymour\ Duncan/*; do ffmpeg -y -v fatal -i "$$i" -f s32le -ar $(SAMPLE_RATE) -ac 1 pipe:1 | ./convert phaser $(phaser_defaults) | $(PLAY) ; done
 
 build/log2.h: scripts/log2.py
 	mkdir -p build
@@ -72,9 +73,14 @@ build/quarter_sine.h: scripts/quarter_sine.py
 
 build/eq-w0.h: scripts/eq-w0.py
 	mkdir -p build
-	$(PYTHON) scripts/eq-w0.py build/eq-w0.h 8
+	$(PYTHON) scripts/eq-w0.py build/eq-w0.h $(SAMPLE_RATE)
 
-test: test-sincos test-lfo
+test: test-sincos test-eq test-lfo
+
+tests/eq: tests/eq.o
+tests/eq.o: $(HEADERS)
+test-eq: tests/eq
+	tests/eq
 
 tests/lfo: tests/lfo.o
 tests/lfo.o: $(HEADERS)
@@ -86,4 +92,4 @@ tests/sincos.o: $(HEADERS)
 test-sincos: tests/sincos
 	tests/sincos
 
-.PHONY: default play $(effects) SeymourDuncan visualize test-lfo test-sincos
+.PHONY: default play $(effects) SeymourDuncan visualize test-lfo test-sincos test-eq
