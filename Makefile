@@ -72,7 +72,7 @@ build/quarter_sine.h: scripts/quarter_sine.py
 
 build/eq-w0.h: scripts/eq-w0.py
 	mkdir -p build
-	$(PYTHON) scripts/eq-w0.py build/eq-w0.h 8
+	$(PYTHON) scripts/eq-w0.py build/eq-w0.h 48000
 
 test: test-sincos test-lfo
 
