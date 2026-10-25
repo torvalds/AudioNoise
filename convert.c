@@ -42,12 +42,12 @@ static signed char pots[10];
 
 static void describe(struct effect *eff, signed char pots[10])
 {
-	printf("%s:\n", eff->name);
+	fprintf(stderr, "%s:\n", eff->name);
 	for (int i = 0; i < 10; i++) {
 		const struct pot_descr *desc = eff->pots+i;
 		if (!desc->label)
 			break;
-		printf("  %s: %f %s\n", desc->label,
+		fprintf(stderr, "  %s: %f %s\n", desc->label,
 			desc->convert(pots[i]),
 			desc->describe(pots[i]));
 	}
@@ -63,15 +63,16 @@ static void *modify_pots(void *arg)
 		if (n <= 0)
 			return NULL;
 		switch (buf[0]) {
-		case 'p':
+		case 'p': {
 			unsigned int idx = buf[1]-'0';
 			unsigned int d1 = buf[2]-'0';
 			unsigned int d2 = buf[3]-'0';
-			if (idx > 3 || d1 > 9 || d2 > 9)
+			if (idx > 9 || d1 > 9 || d2 > 9)
 				break;
 			pots[idx] = 2*(d1*10+d2) - 100;
 			describe(eff, pots);
 			break;
+		}
 		}
 	}
 }
@@ -109,8 +110,12 @@ int main(int argc, char **argv)
 		// Is it the name of an effect and we don't have one yet?
 		if (!eff) {
 			for (int i = 0; i < ARRAY_SIZE(effects); i++) {
-				if (!strcasecmp(arg, effects[i]->name))
-					eff = effects[i];
+				struct effect *e = effects[i];
+				if (!e->step || !e->init)
+					continue;
+				if (!strcasecmp(arg, e->name) ||
+				    (e->short_name && !strcasecmp(arg, e->short_name)))
+					eff = e;
 			}
 			if (eff)
 				continue;
@@ -149,6 +154,11 @@ int main(int argc, char **argv)
 		}
 
 		fprintf(stderr, "Unrecognized option '%s'\n", arg);
+		exit(1);
+	}
+
+	if (!eff) {
+		fprintf(stderr, "No effect selected\n");
 		exit(1);
 	}
 

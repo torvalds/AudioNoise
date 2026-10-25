@@ -17,7 +17,7 @@ static inline void echo_init(signed char pot[10])
 {
 	echo.target_delay = echo_pot0(pot[0]) * SAMPLES_PER_MSEC;	// delay = 0 .. 1s
 	echo.depth = echo_pot1(pot[1]);					// depth = 0 .. 100%
-	echo.feedback = echo_pot2(pot[3]);				// feedback = 0 .. 100%
+	echo.feedback = echo_pot2(pot[2]);				// feedback = 0 .. 100%
 }
 
 static inline float echo_step(float in)
