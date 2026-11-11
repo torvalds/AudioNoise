@@ -693,6 +693,8 @@ class AudioNoisePedal(Gtk.Window):
         if self.playing:
             self.stop_playback()
 
+        self.stomp.set_active(False)
+
         if not Path('input.raw').exists():
             self.set_status("No input.raw file", "#ff6666")
             return
@@ -746,6 +748,7 @@ class AudioNoisePedal(Gtk.Window):
                 latency = "ffplay"
 
             self.playing = True
+            self.stomp.set_active(True)
             self.set_status(f"▶ {self.current_effect.upper()} ({latency})", "#88cc88")
 
             GLib.timeout_add(100, self.check_playback)
