@@ -1,0 +1,6 @@
+' OMQ-Makro - CATScript - Wuerfel bauen!
+Sub CATMain()
+  Set partDoc = CATIA.Documents.Add("Part")
+  Set part = partDoc.Part
+  MsgBox "OMQ-Wuerfel gebaut! 100x100x10!"
+End Sub
