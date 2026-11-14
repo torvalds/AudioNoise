@@ -1,3 +1,4 @@
+
 CC = gcc
 CFLAGS = -Wall -O2 -Iaudio -Ibuild -I.
 LDLIBS = -lm
@@ -74,16 +75,43 @@ build/eq-w0.h: scripts/eq-w0.py
 	mkdir -p build
 	$(PYTHON) scripts/eq-w0.py build/eq-w0.h 8
 
-test: test-sincos test-lfo
+# Run all regression tests.
+test: test-sincos test-lfo test-biquad test-util test-sample-array
 
+# LFO tests.
 tests/lfo: tests/lfo.o
 tests/lfo.o: $(HEADERS)
-test-lfo: tests/lfo
-	tests/lfo
 
+test-lfo: tests/lfo
+	./tests/lfo
+
+# Sine and cosine tests.
 tests/sincos: tests/sincos.o
 tests/sincos.o: $(HEADERS)
-test-sincos: tests/sincos
-	tests/sincos
 
-.PHONY: default play $(effects) SeymourDuncan visualize test-lfo test-sincos
+test-sincos: tests/sincos
+	./tests/sincos
+
+# Biquad filter tests.
+tests/biquad: tests/biquad.o
+tests/biquad.o: $(HEADERS)
+
+test-biquad: tests/biquad
+	./tests/biquad
+
+# Utility function tests.
+tests/util: tests/util.o
+tests/util.o: $(HEADERS)
+
+test-util: tests/util
+	./tests/util
+
+# Sample array tests.
+tests/sample_array: tests/sample_array.o
+tests/sample_array.o: $(HEADERS)
+
+test-sample-array: tests/sample_array
+	./tests/sample_array
+
+.PHONY: default play $(effects) SeymourDuncan visualize test \
+        test-lfo test-sincos test-biquad test-util test-sample-array
